@@ -47,17 +47,16 @@ The first Gradle build may remain a single Android module. These are logical bou
 The Task Coordinator calls transport-neutral operations:
 
 - `getBackendCapabilities()`
-- `fetchNextCandidateBatch(cursor)`
-- `fetchCandidateSnapshot(batchId)`
+- `fetchPendingQueue()`
 - `publishReceipt(receiptBundle)`
 - `verifyPublishedReceipt(receiptId, contentHash)`
 - `readPublishedStatus()`
 
-The first adapter uses GitHub Git and maps these operations to configured repository and data branch. All branch names, Git history traversal, repository paths, SSH/HTTPS transport and remote commit verification stay inside the adapter. A future HTTP backend can implement the same port without changing the UI or Probe Engine.
+The cloud owns candidate history traversal, cursor reconciliation, immutable snapshot retrieval, deduplication and merge. It publishes one cumulative pending queue plus manifest and metadata. The Android adapter only downloads and verifies those three files from the configured repository/data branch. Receipt upload and remote commit verification remain in the adapter. A future HTTP backend can implement the same port without changing the UI or Probe Engine.
 
 ### ProbePort
 
-The Task Coordinator supplies an immutable job input: contract version, batch ID, candidate YAML, matching manifest/metadata, expected hashes and probe options.
+The Task Coordinator supplies an immutable job input: contract version, latest candidate commit, ordered source commit list, cloud-prepared candidate YAML, matching manifest/metadata, expected hashes and probe options.
 
 The Probe Engine returns receipt JSON, candidate/manifest sidecars, hashes, coverage summary and structured diagnostics. It does not download candidates, upload receipts, advance backend cursors or store Git credentials.
 
@@ -68,7 +67,7 @@ The Task Coordinator records each artifact's type, task ID, path, size, hash, cr
 ## Task lifecycle
 
 1. Connect and validate backend identity, contract version and permissions.
-2. Fetch candidate batch and required historical snapshot data.
+2. Download the cloud-prepared cumulative pending queue.
 3. Verify manifest, metadata, hashes and candidate coverage before testing.
 4. Run the existing probe behavior through the local runtime.
 5. Atomically save the complete receipt and its candidate/manifest sidecars.
