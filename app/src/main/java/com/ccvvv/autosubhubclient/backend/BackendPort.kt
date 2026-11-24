@@ -73,9 +73,7 @@ object GitHubBackendEndpoints {
     fun branch(config: BackendConfig): String {
         config.validate()
         val (owner, repository) = config.ownerAndRepository
-        val encodedBranch = config.dataBranch.split('/').joinToString("/") {
-            query(it).replace("+", "%20")
-        }
+        val encodedBranch = query(config.dataBranch).replace("+", "%20")
         return "https://api.github.com/repos/$owner/$repository/branches/$encodedBranch"
     }
 
