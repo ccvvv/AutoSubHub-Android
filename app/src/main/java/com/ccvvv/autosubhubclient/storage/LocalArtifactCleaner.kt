@@ -3,7 +3,6 @@ package com.ccvvv.autosubhubclient.storage
 import android.content.Context
 import java.io.File
 import java.io.FileInputStream
-import java.nio.file.Files
 import java.security.MessageDigest
 
 data class CleanupResult(
