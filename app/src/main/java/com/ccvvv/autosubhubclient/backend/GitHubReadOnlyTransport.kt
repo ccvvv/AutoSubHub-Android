@@ -41,14 +41,26 @@ class GitHubReadOnlyTransport(
     fun fetchPendingQueue(workspace: File): PendingQueueBundle {
         require(workspace.exists() || workspace.mkdirs()) { "Cannot create pending queue workspace" }
         require(workspace.isDirectory) { "Pending queue workspace is not a directory" }
+        // Distinguish an absent queue from a mistyped repository or data branch.
+        request(GitHubBackendEndpoints.branch(config), GITHUB_JSON)
 
         fun readContents(path: String): ByteArray {
             val url = GitHubBackendEndpoints.contentsFile(config, path, config.dataBranch)
             // The raw media type avoids the Contents API's base64/JSON size overhead and
             // supports larger candidate YAML files. The ref remains a query parameter.
-            return request(url, GITHUB_RAW).also {
-                require(it.isNotEmpty()) { "Cloud queue file is empty: $path" }
+            val bytes = try {
+                request(url, GITHUB_RAW)
+            } catch (error: IllegalStateException) {
+                if (error.message?.startsWith("GitHub read failed (HTTP 404)") == true) {
+                    throw IllegalStateException(
+                        "Cloud pending queue is not published or is incomplete (missing $path)",
+                        error
+                    )
+                }
+                throw error
             }
+            require(bytes.isNotEmpty()) { "Cloud queue file is empty: $path" }
+            return bytes
         }
 
         val candidateBytes = readContents("candidate/pending.yaml")
