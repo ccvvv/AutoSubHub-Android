@@ -17,7 +17,8 @@ import java.security.MessageDigest
 class GitHubReadOnlyTransport(
     private val config: BackendConfig,
     private val connectTimeoutMs: Int = 15_000,
-    private val readTimeoutMs: Int = 45_000
+    private val readTimeoutMs: Int = 45_000,
+    private val requestOverride: ((String, String) -> ByteArray)? = null
 ) {
     init {
         config.validate()
@@ -194,6 +195,7 @@ class GitHubReadOnlyTransport(
     }
 
     private fun request(url: String, accept: String): ByteArray {
+        requestOverride?.let { return it(url, accept) }
         val connection = URL(url).openConnection() as HttpURLConnection
         try {
             connection.requestMethod = "GET"
