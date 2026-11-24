@@ -70,5 +70,6 @@ android {
 dependencies {
     // Pure-Java Git implementation: no bundled shell executable or per-commit REST fan-out.
     implementation("org.eclipse.jgit:org.eclipse.jgit:6.10.0.202406032230-r")
+    implementation("org.yaml:snakeyaml:2.3")
     testImplementation("junit:junit:4.13.2")
 }
