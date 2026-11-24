@@ -28,7 +28,7 @@ data class RuntimeEnvironmentSnapshot(
 }
 
 object RuntimeEnvironment {
-    fun inspect(context: Context): RuntimeEnvironmentSnapshot {
+    fun inspect(context: Context, elfExecutionVerified: Boolean = false): RuntimeEnvironmentSnapshot {
         val app = context.applicationInfo
         val nativeDir = app.nativeLibraryDir.orEmpty()
         val nativeDirectory = if (nativeDir.isBlank()) null else java.io.File(nativeDir)
@@ -39,7 +39,8 @@ object RuntimeEnvironment {
             nativeLibraryDirectory = nativeDir,
             nativeLibrariesReadable = nativeDirectory?.canRead() == true,
             appFilesWritable = context.filesDir.canWrite(),
-            extractNativeLibraries = app.flags and ApplicationInfo.FLAG_EXTRACT_NATIVE_LIBS != 0
+            extractNativeLibraries = app.flags and ApplicationInfo.FLAG_EXTRACT_NATIVE_LIBS != 0,
+            elfExecutionVerified = elfExecutionVerified
         )
     }
 }
