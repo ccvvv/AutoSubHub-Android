@@ -13,10 +13,13 @@ Standalone native Android client for AutoSubHub-compatible backends.
 
 ## Current status
 
-The client now includes a SQLite task/artifact journal, remote-proof-gated local cleanup, a versioned backend port, a bounded direct process runner, GitHub connection checks, and download/verification of the cloud-prepared pending queue. Candidate history enumeration, snapshot merging and fingerprint deduplication are cloud responsibilities; the Android app only downloads the finished queue and runs the phone-side probe.
+The Android client currently has a native UI, a SQLite task/artifact journal, remote-proof-gated local cleanup, a versioned backend boundary, a bounded process runner, and a basic ARM64 execution probe.
 
-The cloud workflow publishes `candidate/pending.yaml`, `candidate/pending-manifest.json` and `candidate/pending-meta.json` on the data branch. Receipt upload, end-to-end remote verification, SSH key management, and the bundled Python/SSH/Mihomo runtime are still being implemented. Android executable loading and writable-directory restrictions must be validated on a real device before selecting the final runtime packaging strategy.
+The candidate download path is being aligned with the original AutoSubHub data contract: the app reads `published-subscriptions/candidate/subscription.yaml` directly. It must not depend on the removed `candidate/pending.yaml`, `pending-manifest.json`, or `pending-meta.json` files.
 
+The app now exposes a locally persisted probe-concurrency setting (default 50, allowed range 1–300). This setting is configuration only until the real probe engine is integrated; it is not yet evidence that the phone can execute that many concurrent probes.
+
+Receipt upload, remote receipt verification, SSH key management, and the bundled Python/SSH/Mihomo runtime are still incomplete. The existing Termux workflow remains the operational fallback until the new app passes a full on-device end-to-end test.
 ## Build
 
 The project uses Gradle, Android Gradle Plugin and JDK 17. CI builds a debug APK on pushes and pull requests.
