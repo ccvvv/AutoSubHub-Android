@@ -176,7 +176,7 @@ class MainActivity : Activity() {
                             File(filesDir, "pending-queue")
                         )
                         val message = "云端待测速清单下载并校验成功" +
-                            "\\n待测节点：${queue.proxyCount}" +
+                            "\\n待测节点：${queue.candidateCount}" +
                             "\\n候选批次：${queue.candidateCommits.size}" +
                             "\\n最新候选提交：${queue.candidateCommit}" +
                             "\\nSHA256：${queue.candidateSha256}"
