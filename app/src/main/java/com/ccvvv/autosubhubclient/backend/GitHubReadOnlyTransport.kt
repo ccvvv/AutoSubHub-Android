@@ -113,6 +113,7 @@ class GitHubReadOnlyTransport(
         } else null
         return LatestReceipt(
             // The current Termux receipt schema has no receipt_id field; use its exact-byte SHA256.
+            receiptId = sha256(receiptBytes),
             candidateCommit = receipt.optString("candidate_commit").takeIf { it.isNotBlank() },
             candidateSha256 = receipt.optString("candidate_sha256").takeIf { it.isNotBlank() },
             status = receipt.optString("status").takeIf { it.isNotBlank() },
