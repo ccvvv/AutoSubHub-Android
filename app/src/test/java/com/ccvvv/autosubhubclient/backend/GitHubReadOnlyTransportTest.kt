@@ -99,6 +99,6 @@ class GitHubReadOnlyTransportTest {
     }
 
     companion object {
-        private val YAML = "proxies:\\n- name: node-one\\n  type: socks5\\n  server: 127.0.0.1\\n  port: 1080\\n".toByteArray()
+        private val YAML = "proxies:\n- name: node-one\n  type: socks5\n  server: 127.0.0.1\n  port: 1080\n".toByteArray()
     }
 }
