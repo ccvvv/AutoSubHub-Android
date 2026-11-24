@@ -32,8 +32,17 @@ class JGitCandidateHistoryReader(
         val branchTip: String
     )
 
-    fun read(config: BackendConfig, repositoryDirectory: File): History {
+    fun read(
+        config: BackendConfig,
+        repositoryDirectory: File,
+        requiredCursors: List<String> = emptyList(),
+        bootstrapLimit: Int = DEFAULT_BOOTSTRAP_LIMIT
+    ): History {
         config.validate()
+        require(bootstrapLimit > 0) { "Bootstrap limit must be positive" }
+        require(requiredCursors.all { it.matches(Regex("(?i)^[a-f0-9]{40}$")) }) {
+            "A required candidate cursor is malformed"
+        }
         require(repositoryDirectory.isAbsolute) { "Git repository directory must be absolute" }
         require(repositoryDirectory.exists() || repositoryDirectory.mkdirs()) {
             "Cannot create Git repository directory"
@@ -41,32 +50,50 @@ class JGitCandidateHistoryReader(
         require(repositoryDirectory.isDirectory) { "Git repository path is not a directory" }
 
         val remoteUrl = canonicalRemoteUrl(config)
-        val git = openOrClone(repositoryDirectory, remoteUrl, config.dataBranch)
+        val git = openOrClone(repositoryDirectory, remoteUrl, config.dataBranch, INITIAL_HISTORY_DEPTH)
         try {
             val configuredRemote = git.repository.config.getString("remote", "origin", "url")
             require(configuredRemote == remoteUrl) {
                 "Existing local Git cache belongs to a different repository; refusing to reuse it"
             }
 
-            git.fetch()
-                .setRemote("origin")
-                .call()
+            var depth = INITIAL_HISTORY_DEPTH
+            while (true) {
+                git.fetch()
+                    .setRemote("origin")
+                    .setDepth(depth)
+                    .call()
 
-            val remoteRef = "refs/remotes/origin/${config.dataBranch}"
-            val branchTipId = git.repository.resolve("$remoteRef^{commit}")
-                ?: throw IllegalStateException("Configured data branch was not fetched: ${config.dataBranch}")
+                val remoteRef = "refs/remotes/origin/${config.dataBranch}"
+                val branchTipId = git.repository.resolve("$remoteRef^{commit}")
+                    ?: throw IllegalStateException("Configured data branch was not fetched: ${config.dataBranch}")
+                val commits = collectCandidateCommits(git, branchTipId)
+                require(commits.isNotEmpty()) {
+                    "No add/modify history found for candidate/subscription.yaml"
+                }
 
-            val commits = collectCandidateCommits(git, branchTipId)
-            require(commits.isNotEmpty()) {
-                "No add/modify history found for candidate/subscription.yaml"
+                val enoughHistory = if (requiredCursors.isEmpty()) {
+                    commits.size >= bootstrapLimit
+                } else {
+                    requiredCursors.all { it in commits }
+                }
+                val historyIsComplete = git.repository.objectDatabase.shallowCommits.isEmpty()
+                if (enoughHistory || historyIsComplete) {
+                    return History(commitsNewestFirst = commits, branchTip = branchTipId.name)
+                }
+                if (depth >= MAX_HISTORY_DEPTH) {
+                    throw IllegalStateException(
+                        "Candidate history is still shallow at depth $depth; refusing to skip an older cursor"
+                    )
+                }
+                depth = (depth * 2).coerceAtMost(MAX_HISTORY_DEPTH)
             }
-            return History(commitsNewestFirst = commits, branchTip = branchTipId.name)
         } finally {
             git.close()
         }
     }
 
-    private fun openOrClone(directory: File, remoteUrl: String, branch: String): Git {
+    private fun openOrClone(directory: File, remoteUrl: String, branch: String, initialDepth: Int): Git {
         val gitDirectory = File(directory, ".git")
         if (gitDirectory.exists()) {
             require(gitDirectory.isDirectory) { "Local Git metadata path is not a directory" }
@@ -88,6 +115,7 @@ class JGitCandidateHistoryReader(
                 .setDirectory(directory)
                 .setBranch("refs/heads/$branch")
                 .setNoCheckout(true)
+                .setDepth(initialDepth)
                 .setCloneAllBranches(false)
                 .call()
         } catch (error: Exception) {
@@ -153,6 +181,9 @@ class JGitCandidateHistoryReader(
     companion object {
         const val CANDIDATE_PATH = "candidate/subscription.yaml"
         const val DEFAULT_MAX_HISTORY_COMMITS = 50_000
+        const val DEFAULT_BOOTSTRAP_LIMIT = 20
+        const val INITIAL_HISTORY_DEPTH = 100
+        const val MAX_HISTORY_DEPTH = 100_000
     }
 }
 
