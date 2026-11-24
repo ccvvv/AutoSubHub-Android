@@ -88,8 +88,8 @@ class ProcessCommandRunner : CommandRunner {
             val stderr = stderrFuture.get(2, TimeUnit.SECONDS)
             val result = CommandResult(
                 exitCode = if (finished) process.exitValue() else -1,
-                stdout = stdout.bytes.toString(Charsets.UTF_8.name()),
-                stderr = stderr.bytes.toString(Charsets.UTF_8.name()),
+                stdout = String(stdout.bytes, Charsets.UTF_8),
+                stderr = String(stderr.bytes, Charsets.UTF_8),
                 elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt),
                 stdoutTruncated = stdout.truncated,
                 stderrTruncated = stderr.truncated
