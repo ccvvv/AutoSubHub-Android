@@ -104,7 +104,7 @@ object GitHubBackendEndpoints {
 data class BackendCapabilities(
     val contractVersion: Int,
     val backendIdentity: String,
-    val supportsPendingQueueDownload: Boolean,
+    val supportsCandidateSubscriptionDownload: Boolean,
     val supportsRemoteReceiptVerification: Boolean
 ) {
     fun requireCompatible() {
@@ -177,6 +177,7 @@ data class BackendPublishedStatus(
  */
 interface BackendPort {
     fun getBackendCapabilities(): BackendCapabilities
+    fun fetchCandidateSubscription(): CandidateSubscriptionBundle
     fun publishReceipt(bundle: ReceiptBundle): UploadAcknowledgement
     fun verifyPublishedReceipt(receiptId: String, contentSha256: String): RemotePublicationProof?
     fun readPublishedStatus(): BackendPublishedStatus
