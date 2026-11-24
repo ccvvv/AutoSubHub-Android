@@ -9,8 +9,6 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
-import java.io.File
-import java.security.MessageDigest
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import com.ccvvv.autosubhubclient.storage.LocalArtifactCleaner
@@ -19,8 +17,6 @@ import com.ccvvv.autosubhubclient.runtime.RuntimeEnvironment
 import com.ccvvv.autosubhubclient.runtime.RuntimeExecutionProbe
 import com.ccvvv.autosubhubclient.backend.BackendConfig
 import com.ccvvv.autosubhubclient.backend.GitHubReadOnlyTransport
-import com.ccvvv.autosubhubclient.backend.JGitCandidateHistoryReader
-import com.ccvvv.autosubhubclient.backend.CandidateQueuePlanner
 
 class MainActivity : Activity() {
     private val ioExecutor: ExecutorService = Executors.newFixedThreadPool(2)
@@ -154,64 +150,10 @@ class MainActivity : Activity() {
             }
         }
         root.addView(connectButton)
-        val historyButton = Button(this).apply {
-            text = "读取候选历史并计算待处理批次"
-            val button = this
-            setOnClickListener {
-                val config = try {
-                    BackendConfig(
-                        repositoryUrl = backendInput.text.toString().trim(),
-                        dataBranch = branchInput.text.toString().trim()
-                    ).also { it.validate() }
-                } catch (error: Exception) {
-                    backendStatus.text = "配置错误：${error.message}"
-                    return@setOnClickListener
-                }
-                button.isEnabled = false
-                backendStatus.text = "正在同步 Git 历史并核对远端游标…"
-                ioExecutor.execute {
-                    try {
-                        val cacheName = sha256Hex(config.identity).take(24)
-                        val remote = GitHubReadOnlyTransport(config).readLatestReceipt()
-                        val localCursor = taskStore.getBackendCursor(config.identity)
-                            ?.lastUploadedCandidateCommit
-                        val history = JGitCandidateHistoryReader().read(
-                            config,
-                            File(filesDir, "git-history/$cacheName"),
-                            requiredCursors = listOfNotNull(localCursor, remote.candidateCommit)
-                        )
-                        val plan = CandidateQueuePlanner.plan(
-                            historyNewestFirst = history.commitsNewestFirst,
-                            localCursor = localCursor,
-                            remoteReceiptCursor = remote.candidateCommit
-                        )
-                        val message = "候选历史读取成功" +
-                            "\n数据分支最新提交：${history.branchTip}" +
-                            "\n有效候选批次：${history.commitsNewestFirst.size}" +
-                            "\n本次待处理批次：${plan.pendingCommits.size}" +
-                            "\n处理顺序：从旧到新"
-                        runOnUiThread {
-                            if (!isFinishing && !isDestroyed) {
-                                backendStatus.text = message
-                                button.isEnabled = true
-                            }
-                        }
-                    } catch (error: Exception) {
-                        runOnUiThread {
-                            if (!isFinishing && !isDestroyed) {
-                                backendStatus.text = "候选历史读取失败：${error.message ?: error.javaClass.simpleName}"
-                                button.isEnabled = true
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        root.addView(historyButton)
         val runtimeStatus = TextView(this).apply {
             textSize = 13f
             text = RuntimeEnvironment.inspect(this@MainActivity).summary() +
-                "\n基础探针已随 APK 打包；候选历史使用内嵌 JGit；Python/SSH/Mihomo 尚未内置"
+                "\n基础探针已随 APK 打包；测速运行环境仍在集成中"
         }
         root.addView(TextView(this).apply {
             text = "运行环境"
@@ -303,10 +245,6 @@ class MainActivity : Activity() {
         ioExecutor.shutdownNow()
         super.onDestroy()
     }
-
-    private fun sha256Hex(value: String): String =
-        MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
-            .joinToString("") { "%02x".format(it) }
 
     private fun buildStorageText(summary: com.ccvvv.autosubhubclient.storage.StorageSummary): String =
         "已登记 ${summary.registeredArtifactCount} 个文件（${formatBytes(summary.registeredBytes)}）\n" +
