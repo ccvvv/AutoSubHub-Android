@@ -153,7 +153,7 @@ class MainActivity : Activity() {
         }
         root.addView(connectButton)
         val downloadQueueButton = Button(this).apply {
-            text = "下载云端待测速清单"
+            text = "下载原始待测速订阅"
             val button = this
             setOnClickListener {
                 val config = try {
@@ -170,17 +170,17 @@ class MainActivity : Activity() {
                     .putString(KEY_DATA_BRANCH, config.dataBranch)
                     .apply()
                 button.isEnabled = false
-                backendStatus.text = "正在下载云端已去重的待测速清单…"
+                backendStatus.text = "正在下载 AutoSubHub 原始候选订阅…"
                 ioExecutor.execute {
                     try {
-                        val queue = GitHubReadOnlyTransport(config).fetchPendingQueue(
-                            File(filesDir, "pending-queue")
+                        val candidate = GitHubReadOnlyTransport(config).fetchCandidateSubscription(
+                            File(filesDir, "candidate-subscriptions")
                         )
-                        val message = "云端待测速清单下载并校验成功" +
-                            "\n待测节点：${queue.candidateCount}" +
-                            "\n候选批次：${queue.candidateCommits.size}" +
-                            "\n最新候选提交：${queue.candidateCommit}" +
-                            "\nSHA256：${queue.candidateSha256}"
+                        val message = "原始候选订阅下载并校验成功" +
+                            "\n待测节点：${candidate.candidateCount}" +
+                            "\n文件大小：${candidate.byteCount} 字节" +
+                            "\nSHA256：${candidate.candidateSha256}" +
+                            "\n本地文件：${candidate.candidateFile.name}"
                         runOnUiThread {
                             if (!isFinishing && !isDestroyed) {
                                 backendStatus.text = message
