@@ -51,7 +51,7 @@ Only the Backend Adapter may assert `PUBLISHED_CONFIRMED`. It must verify the re
 
 ## Current implementation status
 
-- Implemented in `app/src/main/java/.../storage/TaskStore.kt`: SQLite task state, artifact registry, remote proof fields, keep-local-copy override, cleanup audit journal and storage summary.
+- Implemented in `app/src/main/java/.../storage/TaskStore.kt`: SQLite task state, artifact registry, remote proof fields, backend cursor persistence, keep-local-copy override, cleanup audit journal and storage summary. Cursor updates are accepted only through `BackendCursorPolicy` after the proof matches the backend identity and remote receipt commit.
 - Implemented in `LocalArtifactCleaner.kt`: task-directory confinement, symlink/traversal rejection, optional SHA-256 verification, verified deletion and interrupted-deletion recovery.
 - The home screen now displays registered storage totals and a manual cleanup action. The action remains disabled when no verified artifacts are eligible.
 - Important: the backend adapter and real task pipeline are not connected yet. No task can become genuinely remotely confirmed until that adapter is implemented and integrated. The current UI therefore has no real task artifacts to clean.
