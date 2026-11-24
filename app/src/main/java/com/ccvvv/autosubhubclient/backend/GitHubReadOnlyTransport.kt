@@ -35,6 +35,37 @@ class GitHubReadOnlyTransport(
     )
 
 
+
+    /**
+     * Downloads the original AutoSubHub candidate pool directly from the data branch.
+     * This is the supported phone input; no cloud-generated pending queue is required.
+     */
+    fun fetchCandidateSubscription(workspace: File): CandidateSubscriptionBundle {
+        require(workspace.exists() || workspace.mkdirs()) { "Cannot create candidate workspace" }
+        require(workspace.isDirectory) { "Candidate workspace is not a directory" }
+        request(GitHubBackendEndpoints.branch(config), GITHUB_JSON)
+        val url = GitHubBackendEndpoints.contentsFile(
+            config, "candidate/subscription.yaml", config.dataBranch
+        )
+        val bytes = request(url, GITHUB_RAW)
+        require(bytes.isNotEmpty()) { "Candidate subscription is empty" }
+        val yaml = String(bytes, Charsets.UTF_8)
+        require(yaml.lineSequence().any { it.trim() == "proxies:" }) {
+            "Candidate subscription is not a valid proxies YAML document"
+        }
+        val candidateCount = yaml.lineSequence().count {
+            it.matches(Regex("^\\s*-\\s*name\\s*:\\s*.+$"))
+        }
+        require(candidateCount > 0) { "Candidate subscription contains no named proxy entries" }
+
+        val hash = sha256(bytes)
+        val target = File(workspace, "candidate-$hash.yaml")
+        if (!target.isFile || sha256(target.readBytes()) != hash) {
+            atomicWrite(target, bytes)
+        }
+        return CandidateSubscriptionBundle(target, hash, bytes.size, candidateCount)
+    }
+
     /**
      * Downloads the cloud-prepared cumulative pending queue. The phone does not enumerate
      * candidate history or merge snapshots; it only verifies and stores the cloud output.
