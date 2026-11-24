@@ -50,7 +50,7 @@ class MainActivity : Activity() {
 
         val backendInput = EditText(this).apply {
             hint = "https://github.com/owner/repository"
-            singleLine = true
+            setSingleLine(true)
             setText(preferences.getString(KEY_BACKEND_URL, "https://github.com/ccvvv/AutoSubHub"))
         }
         root.addView(backendInput)
