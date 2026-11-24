@@ -92,6 +92,9 @@ class GitHubReadOnlyTransport(
             }
         }
 
+        require(metadata.optInt("schema_version", -1) == 1) {
+            "Unsupported cloud pending metadata schema"
+        }
         val candidateCommit = metadata.optString("candidate_commit", "")
         require(candidateCommit.matches(Regex("(?i)^[a-f0-9]{40}$"))) {
             "Cloud pending metadata has an invalid candidate commit"
@@ -99,8 +102,11 @@ class GitHubReadOnlyTransport(
         val commitArray = metadata.optJSONArray("candidate_commits")
             ?: throw IllegalArgumentException("Cloud pending metadata is missing candidate commits")
         val commits = (0 until commitArray.length()).map { commitArray.getString(it) }
-        require(commits.isNotEmpty() && commits.all { it.matches(Regex("(?i)^[a-f0-9]{40}$")) } &&
-            commits.last() == candidateCommit) {
+        require(commits.isNotEmpty() &&
+            commits.distinct().size == commits.size &&
+            commits.all { it.matches(Regex("(?i)^[a-f0-9]{40}$")) } &&
+            commits.last() == candidateCommit &&
+            metadata.optInt("candidate_batch_count", -1) == commits.size) {
             "Cloud pending metadata has an invalid candidate commit list"
         }
         require(metadata.optInt("candidate_count", -1) == nodes.length()) {
