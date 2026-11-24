@@ -13,6 +13,8 @@ import com.ccvvv.autosubhubclient.storage.LocalArtifactCleaner
 import com.ccvvv.autosubhubclient.storage.TaskStore
 import com.ccvvv.autosubhubclient.runtime.RuntimeEnvironment
 import com.ccvvv.autosubhubclient.runtime.RuntimeExecutionProbe
+import com.ccvvv.autosubhubclient.backend.BackendConfig
+import com.ccvvv.autosubhubclient.backend.GitHubReadOnlyTransport
 
 class MainActivity : Activity() {
     private val taskStore by lazy { TaskStore(applicationContext) }
@@ -60,28 +62,86 @@ class MainActivity : Activity() {
         }
         root.addView(backendInput)
 
+        val branchLabel = TextView(this).apply {
+            text = "数据分支"
+            textSize = 16f
+            setPadding(0, padding / 2, 0, 0)
+        }
+        root.addView(branchLabel)
+        val branchInput = EditText(this).apply {
+            hint = "published-subscriptions"
+            setSingleLine(true)
+            setText(preferences.getString(KEY_DATA_BRANCH, "published-subscriptions"))
+        }
+        root.addView(branchInput)
+
+        val backendStatus = TextView(this).apply {
+            textSize = 13f
+            setPadding(0, padding / 3, 0, padding / 3)
+            text = "尚未检查后端连接"
+        }
         val saveButton = Button(this).apply {
-            text = "保存仓库地址"
+            text = "保存后端配置"
             setOnClickListener {
-                val value = backendInput.text.toString().trim()
-                val path = value.removePrefix("https://github.com/").trim('/')
-                val valid = value.startsWith("https://github.com/") &&
-                    path.split('/').size == 2 &&
-                    path.none { it.isWhitespace() }
-                if (!valid) {
-                    Toast.makeText(
-                        this@MainActivity,
-                        "请输入有效的 GitHub 仓库地址",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                } else {
-                    preferences.edit().putString(KEY_BACKEND_URL, value.trimEnd('/')).apply()
-                    Toast.makeText(this@MainActivity, "仓库地址已保存在本机", Toast.LENGTH_SHORT).show()
+                try {
+                    val config = BackendConfig(
+                        repositoryUrl = backendInput.text.toString().trim(),
+                        dataBranch = branchInput.text.toString().trim()
+                    )
+                    config.validate()
+                    preferences.edit()
+                        .putString(KEY_BACKEND_URL, config.repositoryUrl.trimEnd('/'))
+                        .putString(KEY_DATA_BRANCH, config.dataBranch)
+                        .apply()
+                    backendStatus.text = "配置已保存；尚未连接"
+                    Toast.makeText(this@MainActivity, "后端配置已保存在本机", Toast.LENGTH_SHORT).show()
+                } catch (error: Exception) {
+                    Toast.makeText(this@MainActivity, error.message ?: "后端配置无效", Toast.LENGTH_LONG).show()
                 }
             }
         }
         root.addView(saveButton)
-
+        root.addView(backendStatus)
+        val connectButton = Button(this).apply {
+            text = "检查 GitHub 后端连接"
+            setOnClickListener {
+                val config = try {
+                    BackendConfig(
+                        repositoryUrl = backendInput.text.toString().trim(),
+                        dataBranch = branchInput.text.toString().trim()
+                    ).also { it.validate() }
+                } catch (error: Exception) {
+                    backendStatus.text = "配置错误：${error.message}"
+                    return@setOnClickListener
+                }
+                isEnabled = false
+                backendStatus.text = "正在读取 GitHub 回执（后台执行）…"
+                Thread {
+                    try {
+                        val latest = GitHubReadOnlyTransport(config).readLatestReceipt()
+                        val message = if (latest.receiptCommit == null) {
+                            "仓库连接成功；当前数据分支尚无最新回执"
+                        } else {
+                            "仓库连接成功\\n最新回执状态：${latest.status ?: "未知"}\\n候选版本：${latest.candidateCommit ?: "未知"}\\n回执标识：${latest.receiptId?.take(12) ?: "未知"}\\n远端回执提交：${latest.receiptCommit}"
+                        }
+                        runOnUiThread {
+                            if (!isFinishing) {
+                                backendStatus.text = message
+                                isEnabled = true
+                            }
+                        }
+                    } catch (error: Exception) {
+                        runOnUiThread {
+                            if (!isFinishing) {
+                                backendStatus.text = "连接失败：${error.message ?: error.javaClass.simpleName}"
+                                isEnabled = true
+                            }
+                        }
+                    }
+                }.start()
+            }
+        }
+        root.addView(connectButton)
         val runtimeStatus = TextView(this).apply {
             textSize = 13f
             text = RuntimeEnvironment.inspect(this@MainActivity).summary() +
@@ -200,5 +260,6 @@ class MainActivity : Activity() {
 
     companion object {
         private const val KEY_BACKEND_URL = "backend_url"
+        private const val KEY_DATA_BRANCH = "data_branch"
     }
 }
