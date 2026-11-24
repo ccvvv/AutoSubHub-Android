@@ -9,8 +9,11 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import com.ccvvv.autosubhubclient.storage.LocalArtifactCleaner
+import com.ccvvv.autosubhubclient.storage.TaskStore
 
 class MainActivity : Activity() {
+    private val taskStore by lazy { TaskStore(applicationContext) }
     private val preferences by lazy {
         getSharedPreferences("client_settings", MODE_PRIVATE)
     }
@@ -82,6 +85,48 @@ class MainActivity : Activity() {
         addSection(root, "任务状态", "空闲 · 后续接入持久化后台任务")
         addSection(root, "测速并发", "目标上限 300 · 必须通过真机压力测试后启用")
 
+        val storageSummary = taskStore.getStorageSummary()
+        val storageStatus = TextView(this).apply {
+            textSize = 13f
+            setPadding(0, padding / 2, 0, padding / 3)
+            text = buildStorageText(storageSummary)
+        }
+        root.addView(TextView(this).apply {
+            text = "本地文件管理"
+            textSize = 16f
+            setPadding(0, padding, 0, 0)
+        })
+        root.addView(storageStatus)
+
+        val cleanupButton = Button(this).apply {
+            text = if (storageSummary.cleanupEligibleCount > 0) {
+                "清理已确认上传的文件"
+            } else {
+                "暂无可安全清理的文件"
+            }
+            isEnabled = storageSummary.cleanupEligibleCount > 0
+            setOnClickListener {
+                isEnabled = false
+                Thread {
+                    val result = LocalArtifactCleaner(this@MainActivity, taskStore)
+                        .cleanConfirmedArtifacts()
+                    val updated = taskStore.getStorageSummary()
+                    runOnUiThread {
+                        storageStatus.text = buildStorageText(updated)
+                        text = if (updated.cleanupEligibleCount > 0) {
+                            "清理剩余已确认文件"
+                        } else {
+                            "暂无可安全清理的文件"
+                        }
+                        isEnabled = updated.cleanupEligibleCount > 0
+                        val message = "已清理 ${result.deletedCount} 个文件，释放 ${formatBytes(result.deletedBytes)}；保留 ${result.preservedCount} 个"
+                        Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+                    }
+                }.start()
+            }
+        }
+        root.addView(cleanupButton)
+
         val footer = TextView(this).apply {
             text = "安全提示：私钥和访问令牌不会写入仓库。"
             textSize = 12f
@@ -90,6 +135,17 @@ class MainActivity : Activity() {
         root.addView(footer)
 
         setContentView(root)
+    }
+
+    private fun buildStorageText(summary: com.ccvvv.autosubhubclient.storage.StorageSummary): String =
+        "已登记 ${summary.registeredArtifactCount} 个文件（${formatBytes(summary.registeredBytes)}）\\n" +
+            "远端确认后可清理：${summary.cleanupEligibleCount} 个（${formatBytes(summary.cleanupEligibleBytes)}）\\n" +
+            "保留本地副本：${summary.keepLocalCount} 个"
+
+    private fun formatBytes(bytes: Long): String = when {
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+        else -> "${bytes / (1024 * 1024)} MB"
     }
 
     private fun addSection(root: LinearLayout, heading: String, detail: String) {
