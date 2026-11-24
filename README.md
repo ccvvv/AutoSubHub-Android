@@ -26,6 +26,7 @@ The project uses Gradle, Android Gradle Plugin and JDK 17. CI builds a debug APK
 - `:core:security`: local SSH key lifecycle and encrypted backup boundary
 - `:core:runtime`: runtime capability detection and process supervision
 - `:core:tasks`: persistent task state and worker controls
+- `:core:storage`: local artifact lifecycle, remote-confirmed cleanup and crash recovery
 
 Modules will be introduced incrementally; the initial build keeps a single app module to reduce setup risk.
 
