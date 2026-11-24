@@ -1,0 +1,113 @@
+package com.ccvvv.autosubhubclient
+
+import android.app.Activity
+import android.os.Bundle
+import android.view.Gravity
+import android.view.ViewGroup
+import android.widget.Button
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.TextView
+import android.widget.Toast
+
+class MainActivity : Activity() {
+    private val preferences by lazy {
+        getSharedPreferences("client_settings", MODE_PRIVATE)
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        val padding = (20 * resources.displayMetrics.density).toInt()
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.TOP
+            setPadding(padding, padding * 2, padding, padding)
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        }
+
+        val title = TextView(this).apply {
+            text = "AutoSubHub Android"
+            textSize = 25f
+        }
+        root.addView(title)
+
+        val subtitle = TextView(this).apply {
+            text = "独立客户端 · 首版工程骨架"
+            textSize = 14f
+            setPadding(0, padding / 3, 0, padding)
+        }
+        root.addView(subtitle)
+
+        val backendLabel = TextView(this).apply {
+            text = "后端仓库地址"
+            textSize = 16f
+        }
+        root.addView(backendLabel)
+
+        val backendInput = EditText(this).apply {
+            hint = "https://github.com/owner/repository"
+            singleLine = true
+            setText(preferences.getString(KEY_BACKEND_URL, "https://github.com/ccvvv/AutoSubHub"))
+        }
+        root.addView(backendInput)
+
+        val saveButton = Button(this).apply {
+            text = "保存仓库地址"
+            setOnClickListener {
+                val value = backendInput.text.toString().trim()
+                val path = value.removePrefix("https://github.com/").trim('/')
+                val valid = value.startsWith("https://github.com/") &&
+                    path.split('/').size == 2 &&
+                    path.none { it.isWhitespace() }
+                if (!valid) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "请输入有效的 GitHub 仓库地址",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                } else {
+                    preferences.edit().putString(KEY_BACKEND_URL, value.trimEnd('/')).apply()
+                    Toast.makeText(this@MainActivity, "仓库地址已保存在本机", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        root.addView(saveButton)
+
+        addSection(root, "运行环境", "尚未安装 · 当前版本不包含可执行运行时")
+        addSection(root, "SSH 密钥", "尚未生成 · 后续加入本地密钥生成与公钥展示")
+        addSection(root, "任务状态", "空闲 · 后续接入持久化后台任务")
+        addSection(root, "测速并发", "目标上限 300 · 必须通过真机压力测试后启用")
+
+        val footer = TextView(this).apply {
+            text = "安全提示：私钥和访问令牌不会写入仓库。"
+            textSize = 12f
+            setPadding(0, padding, 0, 0)
+        }
+        root.addView(footer)
+
+        setContentView(root)
+    }
+
+    private fun addSection(root: LinearLayout, heading: String, detail: String) {
+        val padding = (resources.displayMetrics.density * 12).toInt()
+        val title = TextView(this).apply {
+            text = heading
+            textSize = 16f
+            setPadding(0, padding, 0, 0)
+        }
+        val description = TextView(this).apply {
+            text = detail
+            textSize = 13f
+        }
+        root.addView(title)
+        root.addView(description)
+    }
+
+    companion object {
+        private const val KEY_BACKEND_URL = "backend_url"
+    }
+}
