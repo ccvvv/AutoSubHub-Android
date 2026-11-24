@@ -117,13 +117,16 @@ data class BackendCapabilities(
 
 
 data class CandidateSubscriptionBundle(
+    val candidateCommit: String,
     val candidateFile: File,
+    val manifestFile: File,
     val candidateSha256: String,
     val byteCount: Int,
     val candidateCount: Int
 ) {
     init {
-        require(candidateFile.isFile)
+        require(candidateCommit.matches(Regex("(?i)^[a-f0-9]{40}$")))
+        require(candidateFile.isFile && manifestFile.isFile)
         require(candidateSha256.matches(Regex("(?i)^[a-f0-9]{64}$")))
         require(byteCount > 0 && candidateCount > 0)
     }
