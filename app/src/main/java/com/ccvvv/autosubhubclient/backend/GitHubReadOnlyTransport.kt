@@ -36,34 +36,103 @@ class GitHubReadOnlyTransport(
 
 
 
+
     /**
-     * Downloads the original AutoSubHub candidate pool directly from the data branch.
-     * This is the supported phone input; no cloud-generated pending queue is required.
+     * Downloads one immutable original candidate snapshot and its manifest.
+     * The commit is resolved first so both files come from exactly the same revision.
      */
     fun fetchCandidateSubscription(workspace: File): CandidateSubscriptionBundle {
         require(workspace.exists() || workspace.mkdirs()) { "Cannot create candidate workspace" }
         require(workspace.isDirectory) { "Candidate workspace is not a directory" }
         request(GitHubBackendEndpoints.branch(config), GITHUB_JSON)
-        val url = GitHubBackendEndpoints.contentsFile(
-            config, "candidate/subscription.yaml", config.dataBranch
-        )
-        val bytes = request(url, GITHUB_RAW)
-        require(bytes.isNotEmpty()) { "Candidate subscription is empty" }
-        val yaml = String(bytes, Charsets.UTF_8)
+
+        val (owner, repository) = config.ownerAndRepository
+        val historyUrl = "https://api.github.com/repos/$owner/$repository/commits" +
+            "?sha=${encodeQuery(config.dataBranch)}" +
+            "&path=${encodeQuery("candidate/subscription.yaml")}&per_page=1&page=1"
+        val history = JSONArray(String(request(historyUrl, GITHUB_JSON), Charsets.UTF_8))
+        require(history.length() > 0) { "No candidate subscription commit was found" }
+        val candidateCommit = history.getJSONObject(0).optString("sha", "")
+        require(candidateCommit.matches(Regex("(?i)^[a-f0-9]{40}$"))) {
+            "GitHub returned an invalid candidate commit"
+        }
+
+        fun readSnapshot(path: String): ByteArray = request(
+            GitHubBackendEndpoints.contentsFile(config, path, candidateCommit),
+            GITHUB_RAW
+        ).also { require(it.isNotEmpty()) { "Candidate snapshot file is empty: $path" } }
+
+        val candidateBytes = readSnapshot("candidate/subscription.yaml")
+        val manifestBytes = readSnapshot("candidate/manifest.json")
+        val yaml = String(candidateBytes, Charsets.UTF_8)
         require(yaml.lineSequence().any { it.trim() == "proxies:" }) {
             "Candidate subscription is not a valid proxies YAML document"
         }
-        val candidateCount = yaml.lineSequence().count {
-            it.matches(Regex("^\\s*-\\s*name\\s*:\\s*.+$"))
+        val candidateCount = yaml.lineSequence().count { it.matches(Regex("^-\\s+.+$")) }
+        val manifest = JSONObject(String(manifestBytes, Charsets.UTF_8))
+        require(manifest.optInt("schema_version", -1) == 1) {
+            "Unsupported candidate manifest schema"
         }
-        require(candidateCount > 0) { "Candidate subscription contains no named proxy entries" }
+        val expectedHash = manifest.optString("candidate_sha256", "").lowercase()
+        val actualHash = sha256(candidateBytes)
+        require(expectedHash.matches(Regex("^[a-f0-9]{64}$")) && expectedHash == actualHash) {
+            "Candidate subscription SHA256 does not match its manifest"
+        }
+        val nodes = manifest.optJSONArray("nodes")
+            ?: throw IllegalArgumentException("Candidate manifest is missing nodes")
+        val names = HashSet<String>()
+        val ids = HashSet<String>()
+        for (index in 0 until nodes.length()) {
+            val node = nodes.getJSONObject(index)
+            val name = node.optString("name", "")
+            val id = node.optString("node_id", "")
+            require(name.isNotBlank() && id.matches(Regex("(?i)^[a-f0-9]{20}$"))) {
+                "Candidate manifest contains an invalid node identity"
+            }
+            require(names.add(name) && ids.add(id)) {
+                "Candidate manifest contains duplicate node names or IDs"
+            }
+        }
+        require(candidateCount == nodes.length() &&
+            manifest.optInt("unique_candidates", -1) == nodes.length()) {
+            "Candidate YAML and manifest node counts do not match"
+        }
 
-        val hash = sha256(bytes)
-        val target = File(workspace, "candidate-$hash.yaml")
-        if (!target.isFile || sha256(target.readBytes()) != hash) {
-            atomicWrite(target, bytes)
+        val target = File(workspace, "candidate-$actualHash")
+        val candidateFile = File(target, "subscription.yaml")
+        val manifestFile = File(target, "manifest.json")
+        val existingIsValid = target.isDirectory &&
+            candidateFile.isFile && manifestFile.isFile &&
+            sha256(candidateFile.readBytes()) == actualHash &&
+            manifestFile.readBytes().contentEquals(manifestBytes)
+        if (!existingIsValid) {
+            if (target.exists()) require(target.deleteRecursively()) {
+                "Cannot replace incomplete local candidate snapshot"
+            }
+            val staging = File(workspace, ".candidate-$actualHash.tmp")
+            if (staging.exists()) require(staging.deleteRecursively()) {
+                "Cannot remove interrupted candidate staging directory"
+            }
+            require(staging.mkdirs()) { "Cannot create candidate staging directory" }
+            try {
+                atomicWrite(File(staging, "subscription.yaml"), candidateBytes)
+                atomicWrite(File(staging, "manifest.json"), manifestBytes)
+                try {
+                    java.nio.file.Files.move(
+                        staging.toPath(), target.toPath(),
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE
+                    )
+                } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+                    java.nio.file.Files.move(staging.toPath(), target.toPath())
+                }
+            } finally {
+                if (staging.exists()) staging.deleteRecursively()
+            }
         }
-        return CandidateSubscriptionBundle(target, hash, bytes.size, candidateCount)
+        return CandidateSubscriptionBundle(
+            candidateCommit, candidateFile, manifestFile, actualHash,
+            candidateBytes.size, candidateCount
+        )
     }
 
     /** Reads the current receipt via the Contents API, so slash-containing branch names remain safe. */
