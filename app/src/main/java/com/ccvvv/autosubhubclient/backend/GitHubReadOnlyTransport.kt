@@ -41,6 +41,16 @@ class GitHubReadOnlyTransport(
         val receiptCommit: String?
     )
 
+    data class PendingQueue(
+        val candidateFile: File,
+        val manifestFile: File,
+        val metadataFile: File,
+        val candidateCommit: String,
+        val candidateCommits: List<String>,
+        val candidateSha256: String,
+        val proxyCount: Int
+    )
+
     /** Downloads an immutable candidate snapshot and verifies its SHA256 against manifest.json. */
     fun fetchCandidateSnapshot(commit: String, workspace: File): CandidateSnapshot {
         require(commit.matches(Regex("(?i)^[a-f0-9]{40}$"))) { "Invalid candidate commit" }
@@ -84,6 +94,77 @@ class GitHubReadOnlyTransport(
         atomicWrite(candidateFile, candidateBytes)
         atomicWrite(manifestFile, manifestBytes)
         return CandidateSnapshot(commit, candidateFile, manifestFile, actualHash, nodes.length())
+    }
+
+    /**
+     * Downloads the cloud-prepared cumulative pending queue. The phone does not enumerate
+     * candidate history or merge snapshots; it only verifies and stores the cloud output.
+     */
+    fun fetchPendingQueue(workspace: File): PendingQueue {
+        require(workspace.exists() || workspace.mkdirs()) { "Cannot create pending queue workspace" }
+        require(workspace.isDirectory) { "Pending queue workspace is not a directory" }
+
+        fun readContents(path: String): ByteArray {
+            val url = GitHubBackendEndpoints.contentsFile(config, path, config.dataBranch)
+            val json = JSONObject(String(request(url, GITHUB_JSON), Charsets.UTF_8))
+            val encoded = json.optString("content", "").replace("\n", "").replace("\r", "").trim()
+            require(encoded.isNotEmpty()) { "Cloud queue file is empty: $path" }
+            return java.util.Base64.getMimeDecoder().decode(encoded)
+        }
+
+        val candidateBytes = readContents("candidate/pending.yaml")
+        val manifestBytes = readContents("candidate/pending-manifest.json")
+        val metadataBytes = readContents("candidate/pending-meta.json")
+        val manifest = JSONObject(String(manifestBytes, Charsets.UTF_8))
+        val metadata = JSONObject(String(metadataBytes, Charsets.UTF_8))
+        val actualHash = sha256(candidateBytes)
+        val expectedHash = manifest.optString("candidate_sha256", "").lowercase()
+        val metadataHash = metadata.optString("candidate_sha256", "").lowercase()
+        require(expectedHash.matches(Regex("^[a-f0-9]{64}$")) &&
+            expectedHash == actualHash && metadataHash == actualHash) {
+            "Cloud pending queue SHA256 verification failed"
+        }
+
+        val nodes = manifest.optJSONArray("nodes")
+            ?: throw IllegalArgumentException("Cloud pending manifest is missing nodes")
+        val names = HashSet<String>()
+        val ids = HashSet<String>()
+        for (index in 0 until nodes.length()) {
+            val node = nodes.getJSONObject(index)
+            val name = node.optString("name", "")
+            val id = node.optString("node_id", "")
+            require(name.isNotBlank() && id.matches(Regex("(?i)^[a-f0-9]{64}$"))) {
+                "Cloud pending manifest contains an invalid node"
+            }
+            require(names.add(name) && ids.add(id)) {
+                "Cloud pending manifest contains duplicate node names or IDs"
+            }
+        }
+
+        val candidateCommit = metadata.optString("candidate_commit", "")
+        require(candidateCommit.matches(Regex("(?i)^[a-f0-9]{40}$"))) {
+            "Cloud pending metadata has an invalid candidate commit"
+        }
+        val commitArray = metadata.optJSONArray("candidate_commits")
+            ?: throw IllegalArgumentException("Cloud pending metadata is missing candidate commits")
+        val commits = (0 until commitArray.length()).map { commitArray.getString(it) }
+        require(commits.isNotEmpty() && commits.all { it.matches(Regex("(?i)^[a-f0-9]{40}$")) } &&
+            commits.last() == candidateCommit) {
+            "Cloud pending metadata has an invalid candidate commit list"
+        }
+        require(metadata.optInt("candidate_count", -1) == nodes.length()) {
+            "Cloud pending node count does not match its manifest"
+        }
+
+        val target = File(workspace, "pending")
+        require(target.exists() || target.mkdirs()) { "Cannot create pending queue directory" }
+        val candidateFile = File(target, "pending.yaml")
+        val manifestFile = File(target, "pending-manifest.json")
+        val metadataFile = File(target, "pending-meta.json")
+        atomicWrite(candidateFile, candidateBytes)
+        atomicWrite(manifestFile, manifestBytes)
+        atomicWrite(metadataFile, metadataBytes)
+        return PendingQueue(candidateFile, manifestFile, metadataFile, candidateCommit, commits, actualHash, nodes.length())
     }
 
     /** Reads the current receipt via the Contents API, so slash-containing branch names remain safe. */
