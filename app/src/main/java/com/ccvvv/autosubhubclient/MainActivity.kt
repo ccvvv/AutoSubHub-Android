@@ -9,6 +9,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import android.text.InputType
 import java.io.File
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -234,7 +235,37 @@ class MainActivity : Activity() {
         })
         addSection(root, "SSH 密钥", "尚未生成 · 后续加入本地密钥生成与公钥展示")
         addSection(root, "任务状态", "空闲 · 后续接入持久化后台任务")
-        addSection(root, "测速并发", "目标上限 300 · 必须通过真机压力测试后启用")
+        val concurrencyLabel = TextView(this).apply {
+            text = "测速并发（1～300）"
+            textSize = 16f
+            setPadding(0, padding, 0, padding / 3)
+        }
+        root.addView(concurrencyLabel)
+        val concurrencyInput = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setSingleLine(true)
+            hint = "默认 50"
+            setText(preferences.getInt(KEY_PROBE_CONCURRENCY, DEFAULT_PROBE_CONCURRENCY).toString())
+        }
+        root.addView(concurrencyInput)
+        val concurrencyStatus = TextView(this).apply {
+            textSize = 12f
+            text = "当前设置：" + preferences.getInt(KEY_PROBE_CONCURRENCY, DEFAULT_PROBE_CONCURRENCY)
+        }
+        root.addView(concurrencyStatus)
+        root.addView(Button(this).apply {
+            text = "保存并发设置"
+            setOnClickListener {
+                val value = concurrencyInput.text.toString().toIntOrNull()
+                if (value == null || value !in MIN_PROBE_CONCURRENCY..MAX_PROBE_CONCURRENCY) {
+                    concurrencyStatus.text = "请输入 1～300 之间的整数"
+                    return@setOnClickListener
+                }
+                preferences.edit().putInt(KEY_PROBE_CONCURRENCY, value).apply()
+                concurrencyStatus.text = "已保存：" + value + " 个并发任务（新任务读取此设置）"
+                Toast.makeText(this@MainActivity, "并发设置已保存", Toast.LENGTH_SHORT).show()
+            }
+        })
 
         val storageSummary = taskStore.getStorageSummary()
         val storageStatus = TextView(this).apply {
@@ -323,5 +354,9 @@ class MainActivity : Activity() {
     companion object {
         private const val KEY_BACKEND_URL = "backend_url"
         private const val KEY_DATA_BRANCH = "data_branch"
+        private const val KEY_PROBE_CONCURRENCY = "probe_concurrency"
+        private const val DEFAULT_PROBE_CONCURRENCY = 50
+        private const val MIN_PROBE_CONCURRENCY = 1
+        private const val MAX_PROBE_CONCURRENCY = 300
     }
 }
