@@ -115,6 +115,20 @@ data class BackendCapabilities(
     }
 }
 
+
+data class CandidateSubscriptionBundle(
+    val candidateFile: File,
+    val candidateSha256: String,
+    val byteCount: Int,
+    val candidateCount: Int
+) {
+    init {
+        require(candidateFile.isFile)
+        require(candidateSha256.matches(Regex("(?i)^[a-f0-9]{64}$")))
+        require(byteCount > 0 && candidateCount > 0)
+    }
+}
+
 data class PendingQueueBundle(
     val candidateCommit: String,
     val candidateCommits: List<String>,
