@@ -77,15 +77,6 @@ object GitHubBackendEndpoints {
         return "https://api.github.com/repos/$owner/$repository/branches/$encodedBranch"
     }
 
-    fun listCandidateCommits(config: BackendConfig, page: Int): String {
-        config.validate()
-        require(page >= 1)
-        val (owner, repository) = config.ownerAndRepository
-        return "https://api.github.com/repos/$owner/$repository/commits" +
-            "?sha=${query(config.dataBranch)}" +
-            "&path=${query("candidate/subscription.yaml")}&per_page=100&page=$page"
-    }
-
     fun contentsFile(config: BackendConfig, relativePath: String, ref: String): String {
         config.validate()
         require(ref.matches(Regex("(?i)^[a-f0-9]{40}$")) || isValidGitBranch(ref)) {
@@ -94,13 +85,6 @@ object GitHubBackendEndpoints {
         val (owner, repository) = config.ownerAndRepository
         val path = encodePath(relativePath)
         return "https://api.github.com/repos/$owner/$repository/contents/$path?ref=${query(ref)}"
-    }
-
-    fun rawSnapshotFile(config: BackendConfig, commit: String, relativePath: String): String {
-        config.validate()
-        require(commit.matches(Regex("(?i)^[a-f0-9]{40}$"))) { "Invalid snapshot commit" }
-        val (owner, repository) = config.ownerAndRepository
-        return "https://raw.githubusercontent.com/$owner/$repository/$commit/${encodePath(relativePath)}"
     }
 
     private fun encodePath(path: String): String {
@@ -120,7 +104,7 @@ object GitHubBackendEndpoints {
 data class BackendCapabilities(
     val contractVersion: Int,
     val backendIdentity: String,
-    val supportsHistoricalSnapshots: Boolean,
+    val supportsPendingQueueDownload: Boolean,
     val supportsRemoteReceiptVerification: Boolean
 ) {
     fun requireCompatible() {
@@ -131,18 +115,23 @@ data class BackendCapabilities(
     }
 }
 
-data class CandidateBatch(
-    val batchId: String,
-    val cursor: String?,
-    val nextCursor: String?,
+data class PendingQueueBundle(
+    val candidateCommit: String,
+    val candidateCommits: List<String>,
     val candidateFile: File,
     val manifestFile: File,
-    val metadataFile: File?,
-    val expectedContentSha256: String
+    val metadataFile: File,
+    val candidateSha256: String,
+    val candidateCount: Int
 ) {
     init {
-        require(batchId.isNotBlank())
-        require(expectedContentSha256.matches(Regex("(?i)^[a-f0-9]{64}$")))
+        require(candidateCommit.matches(Regex("(?i)^[a-f0-9]{40}$")))
+        require(candidateCommits.isNotEmpty() &&
+            candidateCommits.all { it.matches(Regex("(?i)^[a-f0-9]{40}$")) } &&
+            candidateCommits.last().equals(candidateCommit, ignoreCase = true))
+        require(candidateSha256.matches(Regex("(?i)^[a-f0-9]{64}$")))
+        require(candidateCount > 0)
+        require(candidateFile.isFile && manifestFile.isFile && metadataFile.isFile)
     }
 }
 
@@ -191,8 +180,7 @@ data class BackendPublishedStatus(
  */
 interface BackendPort {
     fun getBackendCapabilities(): BackendCapabilities
-    fun fetchNextCandidateBatch(cursor: String?): CandidateBatch?
-    fun fetchCandidateSnapshot(batchId: String): CandidateBatch
+    fun fetchPendingQueue(): PendingQueueBundle?
     fun publishReceipt(bundle: ReceiptBundle): UploadAcknowledgement
     fun verifyPublishedReceipt(receiptId: String, contentSha256: String): RemotePublicationProof?
     fun readPublishedStatus(): BackendPublishedStatus
