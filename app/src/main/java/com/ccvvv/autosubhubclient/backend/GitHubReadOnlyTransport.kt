@@ -253,6 +253,6 @@ class GitHubReadOnlyTransport(
     companion object {
         private const val MAX_RESPONSE_BYTES = 32 * 1024 * 1024
         private const val GITHUB_JSON = "application/vnd.github+json"
-        private const val GITHUB_RAW = "application/vnd.github.raw"
+        private const val GITHUB_RAW = "application/vnd.github.raw+json"
     }
 }
