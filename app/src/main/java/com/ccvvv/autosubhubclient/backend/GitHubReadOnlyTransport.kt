@@ -94,14 +94,43 @@ class GitHubReadOnlyTransport(
             "Cloud pending node count does not match its manifest"
         }
 
-        val target = File(workspace, "pending")
-        require(target.exists() || target.mkdirs()) { "Cannot create pending queue directory" }
+        // Keep each queue generation immutable. Stage all files together and publish the
+        // directory only after every byte has been written, so a failed update cannot mix
+        // a new YAML file with an older manifest or metadata file.
+        val target = File(workspace, "pending-$actualHash")
         val candidateFile = File(target, "pending.yaml")
         val manifestFile = File(target, "pending-manifest.json")
         val metadataFile = File(target, "pending-meta.json")
-        atomicWrite(candidateFile, candidateBytes)
-        atomicWrite(manifestFile, manifestBytes)
-        atomicWrite(metadataFile, metadataBytes)
+        val existingIsValid = target.isDirectory &&
+            candidateFile.isFile && manifestFile.isFile && metadataFile.isFile &&
+            sha256(candidateFile.readBytes()) == actualHash &&
+            manifestFile.readBytes().contentEquals(manifestBytes) &&
+            metadataFile.readBytes().contentEquals(metadataBytes)
+        if (!existingIsValid) {
+            if (target.exists()) require(target.deleteRecursively()) {
+                "Cannot replace an incomplete local pending queue generation"
+            }
+            val staging = File(workspace, ".pending-$actualHash.tmp")
+            if (staging.exists()) require(staging.deleteRecursively()) {
+                "Cannot remove an interrupted pending queue staging directory"
+            }
+            require(staging.mkdirs()) { "Cannot create pending queue staging directory" }
+            try {
+                atomicWrite(File(staging, "pending.yaml"), candidateBytes)
+                atomicWrite(File(staging, "pending-manifest.json"), manifestBytes)
+                atomicWrite(File(staging, "pending-meta.json"), metadataBytes)
+                try {
+                    java.nio.file.Files.move(
+                        staging.toPath(), target.toPath(),
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE
+                    )
+                } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+                    java.nio.file.Files.move(staging.toPath(), target.toPath())
+                }
+            } finally {
+                if (staging.exists()) staging.deleteRecursively()
+            }
+        }
         return PendingQueueBundle(candidateCommit, commits, candidateFile, manifestFile, metadataFile, actualHash, nodes.length())
     }
 
