@@ -112,7 +112,7 @@ class GitHubReadOnlyTransport(
             history.getJSONObject(0).optString("sha").takeIf { it.isNotBlank() }
         } else null
         return LatestReceipt(
-            receiptId = receipt.optString("receipt_id").takeIf { it.isNotBlank() },
+            // The current Termux receipt schema has no receipt_id field; use its exact-byte SHA256.
             candidateCommit = receipt.optString("candidate_commit").takeIf { it.isNotBlank() },
             candidateSha256 = receipt.optString("candidate_sha256").takeIf { it.isNotBlank() },
             status = receipt.optString("status").takeIf { it.isNotBlank() },
