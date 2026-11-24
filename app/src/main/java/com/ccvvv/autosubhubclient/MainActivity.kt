@@ -150,6 +150,53 @@ class MainActivity : Activity() {
             }
         }
         root.addView(connectButton)
+        val downloadQueueButton = Button(this).apply {
+            text = "下载云端待测速清单"
+            val button = this
+            setOnClickListener {
+                val config = try {
+                    BackendConfig(
+                        repositoryUrl = backendInput.text.toString().trim(),
+                        dataBranch = branchInput.text.toString().trim()
+                    ).also { it.validate() }
+                } catch (error: Exception) {
+                    backendStatus.text = "配置错误：${error.message}"
+                    return@setOnClickListener
+                }
+                preferences.edit()
+                    .putString(KEY_BACKEND_URL, config.repositoryUrl.trimEnd('/'))
+                    .putString(KEY_DATA_BRANCH, config.dataBranch)
+                    .apply()
+                button.isEnabled = false
+                backendStatus.text = "正在下载云端已去重的待测速清单…"
+                ioExecutor.execute {
+                    try {
+                        val queue = GitHubReadOnlyTransport(config).fetchPendingQueue(
+                            File(filesDir, "pending-queue")
+                        )
+                        val message = "云端待测速清单下载并校验成功" +
+                            "\\n待测节点：${queue.proxyCount}" +
+                            "\\n候选批次：${queue.candidateCommits.size}" +
+                            "\\n最新候选提交：${queue.candidateCommit}" +
+                            "\\nSHA256：${queue.candidateSha256}"
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed) {
+                                backendStatus.text = message
+                                button.isEnabled = true
+                            }
+                        }
+                    } catch (error: Exception) {
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed) {
+                                backendStatus.text = "下载云端待测速清单失败：${error.message ?: error.javaClass.simpleName}"
+                                button.isEnabled = true
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        root.addView(downloadQueueButton)
         val runtimeStatus = TextView(this).apply {
             textSize = 13f
             text = RuntimeEnvironment.inspect(this@MainActivity).summary() +
