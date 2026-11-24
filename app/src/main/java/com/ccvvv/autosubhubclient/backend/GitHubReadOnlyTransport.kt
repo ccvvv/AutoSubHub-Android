@@ -87,12 +87,20 @@ class GitHubReadOnlyTransport(
     }
 
     /** Reads the current receipt via the Contents API, so slash-containing branch names remain safe. */
-    fun readLatestReceipt(): LatestReceipt {
+    fun readLatestReceipt(): LatestReceipt = try {
+        readLatestReceiptRequired()
+    } catch (error: IllegalStateException) {
+        if (error.message?.startsWith("GitHub read failed (HTTP 404)") == true) {
+            LatestReceipt(null, null, null, null, null)
+        } else throw error
+    }
+
+    private fun readLatestReceiptRequired(): LatestReceipt {
         val contentsUrl = GitHubBackendEndpoints.contentsFile(
             config, "receipts/latest.json", config.dataBranch
         )
         val contents = JSONObject(String(request(contentsUrl, GITHUB_JSON), Charsets.UTF_8))
-        val encoded = contents.optString("content", "").replace("\\n", "").replace("\\r", "").trim()
+        val encoded = contents.optString("content", "").replace("\n", "").replace("\r", "").trim()
         require(encoded.isNotEmpty()) { "GitHub returned an empty latest receipt file" }
         val receiptBytes = java.util.Base64.getMimeDecoder().decode(encoded)
         val receipt = JSONObject(String(receiptBytes, Charsets.UTF_8))
@@ -174,10 +182,6 @@ class GitHubReadOnlyTransport(
     private fun encodeQuery(value: String): String =
         java.net.URLEncoder.encode(value, Charsets.UTF_8.name())
 
-    private fun encodeRefForRaw(ref: String): String =
-        ref.split('/').joinToString("/") {
-            java.net.URLEncoder.encode(it, Charsets.UTF_8.name()).replace("+", "%20")
-        }
 
     companion object {
         private const val MAX_RESPONSE_BYTES = 32 * 1024 * 1024
