@@ -70,6 +70,15 @@ internal fun isValidGitBranch(branch: String): Boolean {
  * remains a path separator while branch names are encoded as one query value.
  */
 object GitHubBackendEndpoints {
+    fun branch(config: BackendConfig): String {
+        config.validate()
+        val (owner, repository) = config.ownerAndRepository
+        val encodedBranch = config.dataBranch.split('/').joinToString("/") {
+            query(it).replace("+", "%20")
+        }
+        return "https://api.github.com/repos/$owner/$repository/branches/$encodedBranch"
+    }
+
     fun listCandidateCommits(config: BackendConfig, page: Int): String {
         config.validate()
         require(page >= 1)
