@@ -39,6 +39,28 @@ class TaskTransitionsTest {
         assertTrue(TaskTransitions.canTransition(TaskState.PUBLISHED_CONFIRMED, TaskState.CLEANUP_ELIGIBLE))
     }
 
+    @Test
+    fun incompleteRemoteBundleProofIsRejected() {
+        val incomplete = RemotePublicationProof(
+            backendIdentity = "backend",
+            receiptId = "receipt",
+            contentSha256 = "c".repeat(64),
+            remoteRevision = "rev",
+            verifiedAtEpochMillis = 1L,
+            completeBundleVerified = false
+        )
+        val malformedHash = RemotePublicationProof(
+            backendIdentity = "backend",
+            receiptId = "receipt",
+            contentSha256 = "not-a-sha256",
+            remoteRevision = "rev",
+            verifiedAtEpochMillis = 1L,
+            completeBundleVerified = true
+        )
+        assertFalse(incomplete.isValid())
+        assertFalse(malformedHash.isValid())
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun rejectsWorkspaceTraversalPath() {
         LocalArtifact("batch-1", "receipts/../../private-key", 1, sha256 = null)
