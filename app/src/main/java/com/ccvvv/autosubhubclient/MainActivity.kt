@@ -172,13 +172,14 @@ class MainActivity : Activity() {
                 ioExecutor.execute {
                     try {
                         val cacheName = sha256Hex(config.identity).take(24)
-                        val history = JGitCandidateHistoryReader().read(
-                            config,
-                            File(filesDir, "git-history/$cacheName")
-                        )
                         val remote = GitHubReadOnlyTransport(config).readLatestReceipt()
                         val localCursor = taskStore.getBackendCursor(config.identity)
                             ?.lastUploadedCandidateCommit
+                        val history = JGitCandidateHistoryReader().read(
+                            config,
+                            File(filesDir, "git-history/$cacheName"),
+                            requiredCursors = listOfNotNull(localCursor, remote.candidateCommit)
+                        )
                         val plan = CandidateQueuePlanner.plan(
                             historyNewestFirst = history.commitsNewestFirst,
                             localCursor = localCursor,
