@@ -1,0 +1,293 @@
+package com.ccvvv.autosubhubclient.storage
+
+import android.content.ContentValues
+import android.content.Context
+import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteOpenHelper
+import com.ccvvv.autosubhubclient.core.RemotePublicationProof
+import com.ccvvv.autosubhubclient.core.TaskState
+import com.ccvvv.autosubhubclient.core.TaskTransitions
+
+data class StoredArtifact(
+    val artifactId: String,
+    val taskId: String,
+    val relativePath: String,
+    val byteCount: Long,
+    val sha256: String?,
+    val keepLocalCopy: Boolean,
+    val cleanupEligible: Boolean
+)
+
+/**
+ * Small SQLite-backed task journal. It stores metadata only; payloads and credentials
+ * remain in app-private files and are never copied into the database.
+ */
+class TaskStore(context: Context) : SQLiteOpenHelper(
+    context.applicationContext,
+    DATABASE_NAME,
+    null,
+    DATABASE_VERSION
+) {
+    override fun onConfigure(db: SQLiteDatabase) {
+        db.setForeignKeyConstraintsEnabled(true)
+    }
+
+    override fun onCreate(db: SQLiteDatabase) {
+        db.execSQL(
+            """CREATE TABLE tasks (
+                task_id TEXT PRIMARY KEY NOT NULL,
+                state TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                backend_identity TEXT,
+                receipt_id TEXT,
+                content_sha256 TEXT,
+                remote_revision TEXT,
+                verified_at INTEGER,
+                complete_bundle_verified INTEGER NOT NULL DEFAULT 0
+            )""".trimIndent()
+        )
+        db.execSQL(
+            """CREATE TABLE artifacts (
+                artifact_id TEXT PRIMARY KEY NOT NULL,
+                task_id TEXT NOT NULL,
+                relative_path TEXT NOT NULL,
+                byte_count INTEGER NOT NULL,
+                sha256 TEXT,
+                keep_local_copy INTEGER NOT NULL DEFAULT 0,
+                cleanup_eligible INTEGER NOT NULL DEFAULT 0,
+                cleaned INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE,
+                UNIQUE(task_id, relative_path)
+            )""".trimIndent()
+        )
+        db.execSQL(
+            """CREATE TABLE cleanup_audit (
+                audit_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id TEXT NOT NULL,
+                artifact_id TEXT NOT NULL,
+                event TEXT NOT NULL,
+                detail TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            )""".trimIndent()
+        )
+        db.execSQL("CREATE INDEX idx_artifacts_task ON artifacts(task_id)")
+        db.execSQL("CREATE INDEX idx_artifacts_cleanup ON artifacts(cleanup_eligible, cleaned)")
+    }
+
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        // Schema migrations are added explicitly; never drop user task data.
+        if (oldVersion != newVersion) {
+            throw IllegalStateException("No migration path from database $oldVersion to $newVersion")
+        }
+    }
+
+    fun createTask(taskId: String, now: Long = System.currentTimeMillis()) {
+        require(taskId.isNotBlank())
+        val values = ContentValues().apply {
+            put("task_id", taskId)
+            put("state", TaskState.QUEUED.name)
+            put("created_at", now)
+            put("updated_at", now)
+        }
+        writableDatabase.insertOrThrow("tasks", null, values)
+    }
+
+    fun getTaskState(taskId: String): TaskState? =
+        readableDatabase.query(
+            "tasks",
+            arrayOf("state"),
+            "task_id = ?",
+            arrayOf(taskId),
+            null,
+            null,
+            null
+        ).use { cursor ->
+            if (cursor.moveToFirst()) TaskState.valueOf(cursor.getString(0)) else null
+        }
+
+    fun transitionTask(taskId: String, next: TaskState, now: Long = System.currentTimeMillis()) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val current = getTaskState(taskId)
+                ?: throw IllegalArgumentException("Unknown task: $taskId")
+            TaskTransitions.requireTransition(current, next)
+            val values = ContentValues().apply {
+                put("state", next.name)
+                put("updated_at", now)
+            }
+            check(db.update("tasks", values, "task_id = ?", arrayOf(taskId)) == 1)
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun addArtifact(
+        artifactId: String,
+        taskId: String,
+        relativePath: String,
+        byteCount: Long,
+        sha256: String? = null
+    ) {
+        require(artifactId.isNotBlank())
+        require(relativePath.isNotBlank() && !relativePath.startsWith("/"))
+        require(!relativePath.split('/').contains(".."))
+        require(byteCount >= 0)
+        require(sha256 == null || sha256.matches(Regex("(?i)^[a-f0-9]{64}$")))
+        val values = ContentValues().apply {
+            put("artifact_id", artifactId)
+            put("task_id", taskId)
+            put("relative_path", relativePath)
+            put("byte_count", byteCount)
+            if (sha256 == null) putNull("sha256") else put("sha256", sha256)
+        }
+        writableDatabase.insertOrThrow("artifacts", null, values)
+    }
+
+    /** Only a complete, validated remote proof can advance REMOTE_VERIFYING to confirmed. */
+    fun confirmRemotePublication(
+        taskId: String,
+        proof: RemotePublicationProof,
+        now: Long = System.currentTimeMillis()
+    ) {
+        require(proof.isValid()) { "Remote publication proof is incomplete or invalid" }
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val current = getTaskState(taskId)
+                ?: throw IllegalArgumentException("Unknown task: $taskId")
+            TaskTransitions.requireTransition(current, TaskState.PUBLISHED_CONFIRMED)
+            require(current == TaskState.REMOTE_VERIFYING) {
+                "Remote verification must be the immediately preceding state"
+            }
+            val values = ContentValues().apply {
+                put("state", TaskState.PUBLISHED_CONFIRMED.name)
+                put("updated_at", now)
+                put("backend_identity", proof.backendIdentity)
+                put("receipt_id", proof.receiptId)
+                put("content_sha256", proof.contentSha256.lowercase())
+                put("remote_revision", proof.remoteRevision)
+                put("verified_at", proof.verifiedAtEpochMillis)
+                put("complete_bundle_verified", 1)
+            }
+            check(db.update("tasks", values, "task_id = ?", arrayOf(taskId)) == 1)
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    /** Mark payloads eligible only after the task's proof is re-read and validated from SQLite. */
+    fun markCleanupEligible(taskId: String, now: Long = System.currentTimeMillis()) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val proof = readProof(db, taskId)
+                ?: throw IllegalStateException("No verified remote publication proof")
+            require(proof.isValid()) { "Stored remote proof is invalid" }
+            val state = getTaskState(taskId)
+                ?: throw IllegalArgumentException("Unknown task: $taskId")
+            TaskTransitions.requireTransition(state, TaskState.CLEANUP_ELIGIBLE)
+            val taskValues = ContentValues().apply {
+                put("state", TaskState.CLEANUP_ELIGIBLE.name)
+                put("updated_at", now)
+            }
+            check(db.update("tasks", taskValues, "task_id = ?", arrayOf(taskId)) == 1)
+            db.execSQL(
+                "UPDATE artifacts SET cleanup_eligible = 1 WHERE task_id = ? AND keep_local_copy = 0",
+                arrayOf(taskId)
+            )
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun setKeepLocalCopy(artifactId: String, keep: Boolean) {
+        val values = ContentValues().apply {
+            put("keep_local_copy", if (keep) 1 else 0)
+            if (keep) put("cleanup_eligible", 0)
+        }
+        check(writableDatabase.update("artifacts", values, "artifact_id = ?", arrayOf(artifactId)) == 1) {
+            "Unknown artifact: $artifactId"
+        }
+    }
+
+    fun listCleanupEligible(): List<StoredArtifact> =
+        readableDatabase.query(
+            "artifacts",
+            arrayOf("artifact_id", "task_id", "relative_path", "byte_count", "sha256", "keep_local_copy", "cleanup_eligible"),
+            "cleanup_eligible = 1 AND cleaned = 0 AND keep_local_copy = 0",
+            null,
+            null,
+            null,
+            "task_id, artifact_id"
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    add(
+                        StoredArtifact(
+                            artifactId = cursor.getString(0),
+                            taskId = cursor.getString(1),
+                            relativePath = cursor.getString(2),
+                            byteCount = cursor.getLong(3),
+                            sha256 = if (cursor.isNull(4)) null else cursor.getString(4),
+                            keepLocalCopy = cursor.getInt(5) == 1,
+                            cleanupEligible = cursor.getInt(6) == 1
+                        )
+                    )
+                }
+            }
+        }
+
+    fun recordCleanupAudit(taskId: String, artifactId: String, event: String, detail: String) {
+        val values = ContentValues().apply {
+            put("task_id", taskId)
+            put("artifact_id", artifactId)
+            put("event", event)
+            put("detail", detail)
+            put("created_at", System.currentTimeMillis())
+        }
+        writableDatabase.insertOrThrow("cleanup_audit", null, values)
+    }
+
+    fun markArtifactCleaned(artifactId: String) {
+        val values = ContentValues().apply {
+            put("cleaned", 1)
+            put("cleanup_eligible", 0)
+        }
+        check(writableDatabase.update("artifacts", values, "artifact_id = ?", arrayOf(artifactId)) == 1) {
+            "Unknown artifact: $artifactId"
+        }
+    }
+
+    private fun readProof(db: SQLiteDatabase, taskId: String): RemotePublicationProof? =
+        db.query(
+            "tasks",
+            arrayOf("backend_identity", "receipt_id", "content_sha256", "remote_revision", "verified_at", "complete_bundle_verified"),
+            "task_id = ?",
+            arrayOf(taskId),
+            null,
+            null,
+            null
+        ).use { cursor ->
+            if (!cursor.moveToFirst() || cursor.isNull(0) || cursor.isNull(1) ||
+                cursor.isNull(2) || cursor.isNull(3) || cursor.isNull(4)
+            ) return@use null
+            RemotePublicationProof(
+                backendIdentity = cursor.getString(0),
+                receiptId = cursor.getString(1),
+                contentSha256 = cursor.getString(2),
+                remoteRevision = cursor.getString(3),
+                verifiedAtEpochMillis = cursor.getLong(4),
+                completeBundleVerified = cursor.getInt(5) == 1
+            )
+        }
+
+    companion object {
+        private const val DATABASE_NAME = "autosubhub_tasks.db"
+        private const val DATABASE_VERSION = 1
+    }
+}
