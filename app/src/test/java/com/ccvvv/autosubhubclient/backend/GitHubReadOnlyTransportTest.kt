@@ -16,46 +16,63 @@ class GitHubReadOnlyTransportTest {
         MessageDigest.getInstance("SHA-256").digest(bytes)
             .joinToString("") { "%02x".format(it) }
 
+
     @Test
-    fun downloadsOriginalCandidateSubscriptionFromPublishedDataBranch() {
+    fun downloadsOriginalCandidateAndManifestFromOneImmutableCommit() {
         val workspace = Files.createTempDirectory("candidate-subscription-test").toFile()
         try {
+            val commit = "a".repeat(40)
+            val manifest = """{"schema_version":1,"candidate_sha256":"${sha256(YAML)}","unique_candidates":1,"nodes":[{"node_id":"${"b".repeat(20)}","name":"node-one"}]}""".toByteArray()
             val requests = mutableListOf<String>()
             val transport = GitHubReadOnlyTransport(
                 config = config,
                 requestOverride = { url, accept ->
                     requests += url
-                    if (url.contains("/branches/")) {
-                        assertEquals("application/vnd.github+json", accept)
-                        "{}".toByteArray()
-                    } else {
-                        assertEquals("application/vnd.github.raw+json", accept)
-                        assertTrue(url.contains("candidate/subscription.yaml"))
-                        assertTrue(url.contains("ref=published-subscriptions"))
-                        YAML
+                    when {
+                        url.contains("/branches/") -> {
+                            assertEquals("application/vnd.github+json", accept)
+                            "{}".toByteArray()
+                        }
+                        url.contains("/commits?") -> {
+                            assertEquals("application/vnd.github+json", accept)
+                            """[{"sha":"$commit"}]""".toByteArray()
+                        }
+                        else -> {
+                            assertEquals("application/vnd.github.raw+json", accept)
+                            assertTrue(url.contains("ref=$commit"))
+                            if (url.contains("manifest.json")) manifest else YAML
+                        }
                     }
                 }
             )
             val bundle = transport.fetchCandidateSubscription(workspace)
+            assertEquals(commit, bundle.candidateCommit)
             assertEquals(1, bundle.candidateCount)
             assertEquals(YAML.size, bundle.byteCount)
             assertEquals(sha256(YAML), bundle.candidateSha256)
             assertTrue(bundle.candidateFile.readBytes().contentEquals(YAML))
-            assertEquals(2, requests.size)
+            assertTrue(bundle.manifestFile.readBytes().contentEquals(manifest))
+            assertEquals(4, requests.size)
         } finally {
             workspace.deleteRecursively()
         }
     }
 
     @Test
-    fun rejectsCandidateSubscriptionWithoutProxyEntries() {
-        val workspace = Files.createTempDirectory("candidate-subscription-empty").toFile()
+    fun rejectsCandidateSubscriptionWhenManifestHashDoesNotMatch() {
+        val workspace = Files.createTempDirectory("candidate-subscription-bad-hash").toFile()
         try {
+            val commit = "a".repeat(40)
+            val manifest = """{"schema_version":1,"candidate_sha256":"${"c".repeat(64)}","unique_candidates":1,"nodes":[{"node_id":"${"b".repeat(20)}","name":"node-one"}]}""".toByteArray()
             val transport = GitHubReadOnlyTransport(
                 config = config,
                 requestOverride = { url, _ ->
-                    if (url.contains("/branches/")) "{}".toByteArray()
-                    else "proxies: []\\n".toByteArray()
+                    when {
+                        url.contains("/branches/") -> "{}".toByteArray()
+                        url.contains("/commits?") -> """[{"sha":"$commit"}]""".toByteArray()
+                        url.contains("manifest.json") -> manifest
+                        else -> YAML
+                    }
                 }
             )
             val error = runCatching {
