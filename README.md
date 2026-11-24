@@ -13,7 +13,9 @@ Standalone native Android client for AutoSubHub-compatible backends.
 
 ## Current status
 
-This is the initial application skeleton. Embedded Python, Git, SSH and Mihomo are intentionally not bundled yet. Android executable loading and writable-directory restrictions must be validated on modern Android before selecting the runtime packaging strategy.
+The client now includes a SQLite task/artifact journal, remote-proof-gated local cleanup, a versioned backend port, candidate-history cursor planning, and a bounded direct process runner. The home screen exposes storage and Android runtime diagnostics.
+
+Embedded Python, Git, SSH and Mihomo are intentionally not bundled yet. The backend transport adapter is not connected, so no live candidate download or receipt upload occurs. Android executable loading and writable-directory restrictions must be validated on a real device before selecting the runtime packaging strategy.
 
 ## Build
 
@@ -29,6 +31,13 @@ The project uses Gradle, Android Gradle Plugin and JDK 17. CI builds a debug APK
 - `:core:storage`: local artifact lifecycle, remote-confirmed cleanup and crash recovery
 
 Modules will be introduced incrementally; the initial build keeps a single app module to reduce setup risk.
+
+## Validation gates
+
+- CI runs Kotlin unit tests before assembling the debug APK.
+- Storage cleanup tests must prove that local probe completion or a Git push exit code alone cannot authorize deletion.
+- The Android ELF execution gate is documented in [runtime execution validation](docs/runtime-execution.md); it is not yet passed.
+- The backend port is defined, but the GitHub transport adapter and end-to-end workflow are still pending.
 
 ## Security
 
