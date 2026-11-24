@@ -107,6 +107,7 @@ class MainActivity : Activity() {
         root.addView(backendStatus)
         val connectButton = Button(this).apply {
             text = "检查 GitHub 后端连接"
+            val button = this
             setOnClickListener {
                 val config = try {
                     BackendConfig(
@@ -121,7 +122,7 @@ class MainActivity : Activity() {
                     .putString(KEY_BACKEND_URL, config.repositoryUrl.trimEnd('/'))
                     .putString(KEY_DATA_BRANCH, config.dataBranch)
                     .apply()
-                isEnabled = false
+                button.isEnabled = false
                 backendStatus.text = "正在读取 GitHub 回执（后台执行）…"
                 ioExecutor.execute {
                     try {
@@ -134,18 +135,18 @@ class MainActivity : Activity() {
                         runOnUiThread {
                             if (!isFinishing && !isDestroyed) {
                                 backendStatus.text = message
-                                connectButton.isEnabled = true
+                                button.isEnabled = true
                             }
                         }
                     } catch (error: Exception) {
                         runOnUiThread {
                             if (!isFinishing && !isDestroyed) {
                                 backendStatus.text = "连接失败：${error.message ?: error.javaClass.simpleName}"
-                                connectButton.isEnabled = true
+                                button.isEnabled = true
                             }
                         }
                     }
-                }.start()
+                }
             }
         }
         root.addView(connectButton)
@@ -180,7 +181,7 @@ class MainActivity : Activity() {
                             ).show()
                         }
                     }
-                }.start()
+                }
             }
         })
         addSection(root, "SSH 密钥", "尚未生成 · 后续加入本地密钥生成与公钥展示")
@@ -225,7 +226,7 @@ class MainActivity : Activity() {
                         val message = "已清理 ${result.deletedCount} 个文件，释放 ${formatBytes(result.deletedBytes)}；保留 ${result.preservedCount} 个"
                         Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
                     }
-                }.start()
+                }
             }
         }
         root.addView(cleanupButton)
