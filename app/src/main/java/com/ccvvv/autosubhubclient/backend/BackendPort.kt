@@ -100,6 +100,7 @@ data class UploadAcknowledgement(
 data class BackendPublishedStatus(
     val latestRevision: String?,
     val latestReceiptId: String?,
+    val latestCandidateCommit: String?,
     val latestContentSha256: String?
 )
 
