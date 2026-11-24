@@ -12,6 +12,7 @@ import android.widget.Toast
 import com.ccvvv.autosubhubclient.storage.LocalArtifactCleaner
 import com.ccvvv.autosubhubclient.storage.TaskStore
 import com.ccvvv.autosubhubclient.runtime.RuntimeEnvironment
+import com.ccvvv.autosubhubclient.runtime.RuntimeExecutionProbe
 
 class MainActivity : Activity() {
     private val taskStore by lazy { TaskStore(applicationContext) }
@@ -81,7 +82,40 @@ class MainActivity : Activity() {
         }
         root.addView(saveButton)
 
-        addSection(root, "运行环境", RuntimeEnvironment.inspect(this).summary() + "\\n运行工具尚未内置；ELF 执行能力尚未在真机验证")
+        val runtimeStatus = TextView(this).apply {
+            textSize = 13f
+            text = RuntimeEnvironment.inspect(this@MainActivity).summary() +
+                "\\n基础探针已随 APK 打包；Python/Git/SSH/Mihomo 尚未内置"
+        }
+        root.addView(TextView(this).apply {
+            text = "运行环境"
+            textSize = 16f
+            setPadding(0, padding, 0, 0)
+        })
+        root.addView(runtimeStatus)
+        root.addView(Button(this).apply {
+            text = "执行 ELF 自检（无害测试程序）"
+            setOnClickListener {
+                isEnabled = false
+                Thread {
+                    val result = RuntimeExecutionProbe(this@MainActivity).runSelfTest()
+                    runOnUiThread {
+                        if (!isFinishing) {
+                            runtimeStatus.text = RuntimeEnvironment.inspect(
+                                this@MainActivity,
+                                elfExecutionVerified = result.success
+                            ).summary() + "\\n" + result.detail
+                            isEnabled = true
+                            Toast.makeText(
+                                this@MainActivity,
+                                if (result.success) "ELF 执行成功" else "ELF 执行未通过：" + result.detail,
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }
+                }.start()
+            }
+        })
         addSection(root, "SSH 密钥", "尚未生成 · 后续加入本地密钥生成与公钥展示")
         addSection(root, "任务状态", "空闲 · 后续接入持久化后台任务")
         addSection(root, "测速并发", "目标上限 300 · 必须通过真机压力测试后启用")
