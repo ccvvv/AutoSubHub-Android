@@ -2,6 +2,8 @@ package com.ccvvv.autosubhubclient.backend
 
 import com.ccvvv.autosubhubclient.core.RemotePublicationProof
 import java.io.File
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 const val CURRENT_BACKEND_CONTRACT_VERSION = 1
 
@@ -11,21 +13,28 @@ data class BackendConfig(
     val contractVersion: Int = CURRENT_BACKEND_CONTRACT_VERSION
 ) {
     fun validate() {
-        require(repositoryUrl.startsWith("https://")) { "Backend URL must use HTTPS" }
-        require(repositoryUrl.endsWith(".git").not()) {
-            "Use the repository web URL without the optional .git suffix"
-        }
+        require(repositoryUrl.isNotBlank()) { "Backend URL is required" }
         val uri = java.net.URI(repositoryUrl)
+        require(uri.scheme.equals("https", ignoreCase = true)) {
+            "Backend URL must use HTTPS"
+        }
         require(uri.host?.equals("github.com", ignoreCase = true) == true) {
             "Only GitHub repository URLs are supported by the first adapter"
         }
+        require(uri.userInfo == null && uri.port == -1 && uri.query == null && uri.fragment == null) {
+            "Backend URL must not contain credentials, a port, query, or fragment"
+        }
+        require(uri.path.endsWith(".git").not()) {
+            "Use the repository web URL without the optional .git suffix"
+        }
         val segments = uri.path.trim('/').split('/')
-        require(segments.size == 2 && segments.all { it.isNotBlank() }) {
+        require(segments.size == 2 && segments.all { it.matches(Regex("^[A-Za-z0-9_.-]+$")) }) {
             "Expected https://github.com/owner/repository"
         }
-        require(dataBranch.isNotBlank() && !dataBranch.contains(' ')) {
-            "A valid data branch is required"
+        require(segments.none { it == "." || it == ".." }) {
+            "Invalid GitHub repository path"
         }
+        require(isValidGitBranch(dataBranch)) { "Invalid Git data branch name" }
         require(contractVersion == CURRENT_BACKEND_CONTRACT_VERSION) {
             "Unsupported backend contract version: $contractVersion"
         }
@@ -33,8 +42,74 @@ data class BackendConfig(
 
     val identity: String
         get() = "${repositoryUrl.trimEnd('/')}#${dataBranch}"
+
+    val ownerAndRepository: Pair<String, String>
+        get() {
+            validate()
+            val segments = java.net.URI(repositoryUrl).path.trim('/').split('/')
+            return segments[0] to segments[1]
+        }
 }
 
+/** Git's ref-name constraints, applied before a branch can enter a URL or command argument. */
+internal fun isValidGitBranch(branch: String): Boolean {
+    if (branch.isBlank() || branch.startsWith('/') || branch.endsWith('/') ||
+        branch.startsWith('.') || branch.endsWith('.') || branch.contains("//") ||
+        branch.contains("..") || branch.contains("@{") || branch == "@" ||
+        branch.endsWith(".lock", ignoreCase = true)
+    ) return false
+
+    return branch.none { char ->
+        char.isWhitespace() || char.code < 0x20 || char.code == 0x7f ||
+            char in "~^:?*[\\\\"
+    }
+}
+
+/**
+ * Centralizes GitHub REST/raw URLs. Paths are encoded segment-by-segment so a slash
+ * remains a path separator while branch names are encoded as one query value.
+ */
+object GitHubBackendEndpoints {
+    fun listCandidateCommits(config: BackendConfig, page: Int): String {
+        config.validate()
+        require(page >= 1)
+        val (owner, repository) = config.ownerAndRepository
+        return "https://api.github.com/repos/$owner/$repository/commits" +
+            "?sha=${query(config.dataBranch)}" +
+            "&path=${query("candidate/subscription.yaml")}&per_page=100&page=$page"
+    }
+
+    fun contentsFile(config: BackendConfig, relativePath: String, ref: String): String {
+        config.validate()
+        require(ref.matches(Regex("(?i)^[a-f0-9]{40}$")) || isValidGitBranch(ref)) {
+            "Invalid content ref"
+        }
+        val (owner, repository) = config.ownerAndRepository
+        val path = encodePath(relativePath)
+        return "https://api.github.com/repos/$owner/$repository/contents/$path?ref=${query(ref)}"
+    }
+
+    fun rawSnapshotFile(config: BackendConfig, commit: String, relativePath: String): String {
+        config.validate()
+        require(commit.matches(Regex("(?i)^[a-f0-9]{40}$"))) { "Invalid snapshot commit" }
+        val (owner, repository) = config.ownerAndRepository
+        return "https://raw.githubusercontent.com/$owner/$repository/$commit/${encodePath(relativePath)}"
+    }
+
+    private fun encodePath(path: String): String {
+        require(path.isNotBlank() && !path.startsWith('/')) { "A relative file path is required" }
+        val segments = path.split('/')
+        require(segments.all { it.isNotBlank() && it != "." && it != ".." }) {
+            "Unsafe repository file path"
+        }
+        return segments.joinToString("/") { query(it).replace("+", "%20") }
+    }
+
+    private fun query(value: String): String =
+        URLEncoder.encode(value, StandardCharsets.UTF_8.name())
+}
+
+/** Transport-neutral backend boundary. Implementations own repository paths and Git operations. */
 data class BackendCapabilities(
     val contractVersion: Int,
     val backendIdentity: String,
@@ -105,9 +180,6 @@ data class BackendPublishedStatus(
 )
 
 /**
- * Transport-neutral backend boundary. Implementations own all repository paths,
- * branch mapping, Git commands and remote receipt verification.
- *
  * Invoke from a background task executor; implementations must not block the UI thread.
  */
 interface BackendPort {
