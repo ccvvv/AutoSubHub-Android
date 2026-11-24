@@ -129,26 +129,6 @@ data class CandidateSubscriptionBundle(
     }
 }
 
-data class PendingQueueBundle(
-    val candidateCommit: String,
-    val candidateCommits: List<String>,
-    val candidateFile: File,
-    val manifestFile: File,
-    val metadataFile: File,
-    val candidateSha256: String,
-    val candidateCount: Int
-) {
-    init {
-        require(candidateCommit.matches(Regex("(?i)^[a-f0-9]{40}$")))
-        require(candidateCommits.isNotEmpty() &&
-            candidateCommits.all { it.matches(Regex("(?i)^[a-f0-9]{40}$")) } &&
-            candidateCommits.last().equals(candidateCommit, ignoreCase = true))
-        require(candidateSha256.matches(Regex("(?i)^[a-f0-9]{64}$")))
-        require(candidateCount > 0)
-        require(candidateFile.isFile && manifestFile.isFile && metadataFile.isFile)
-    }
-}
-
 data class ReceiptBundle(
     val taskId: String,
     val receiptId: String,
@@ -194,7 +174,6 @@ data class BackendPublishedStatus(
  */
 interface BackendPort {
     fun getBackendCapabilities(): BackendCapabilities
-    fun fetchPendingQueue(): PendingQueueBundle?
     fun publishReceipt(bundle: ReceiptBundle): UploadAcknowledgement
     fun verifyPublishedReceipt(receiptId: String, contentSha256: String): RemotePublicationProof?
     fun readPublishedStatus(): BackendPublishedStatus
