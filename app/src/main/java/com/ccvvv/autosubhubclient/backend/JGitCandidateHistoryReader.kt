@@ -3,7 +3,6 @@ package com.ccvvv.autosubhubclient.backend
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.diff.DiffEntry
 import org.eclipse.jgit.diff.DiffFormatter
-import org.eclipse.jgit.lib.Constants
 import org.eclipse.jgit.lib.Repository
 import org.eclipse.jgit.revwalk.RevCommit
 import org.eclipse.jgit.revwalk.RevWalk
@@ -57,7 +56,7 @@ class JGitCandidateHistoryReader(
             val branchTipId = git.repository.resolve("$remoteRef^{commit}")
                 ?: throw IllegalStateException("Configured data branch was not fetched: ${config.dataBranch}")
 
-            val commits = collectCandidateCommits(git.repository, branchTipId)
+            val commits = collectCandidateCommits(git, branchTipId)
             require(commits.isNotEmpty()) {
                 "No add/modify history found for candidate/subscription.yaml"
             }
@@ -96,10 +95,10 @@ class JGitCandidateHistoryReader(
         }
     }
 
-    private fun collectCandidateCommits(repository: Repository, branchTip: org.eclipse.jgit.lib.ObjectId): List<String> {
+    private fun collectCandidateCommits(git: Git, branchTip: org.eclipse.jgit.lib.ObjectId): List<String> {
+        val repository = git.repository
         val result = ArrayList<String>()
-        Git(repository).use { git ->
-            RevWalk(repository).use { walk ->
+        RevWalk(repository).use { walk ->
                 val head = walk.parseCommit(branchTip)
                 val pathHistory = git.log()
                     .add(head)
@@ -114,7 +113,6 @@ class JGitCandidateHistoryReader(
                         }
                     }
                 }
-            }
         }
         return result
     }
