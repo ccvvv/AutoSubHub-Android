@@ -17,6 +17,21 @@ This document defines the boundary between the Android client and the backend. I
 4. Credentials are never embedded in contract documents or committed files.
 5. Any schema change must be documented and tested before the client depends on it.
 
+## Client-side port (implemented; transport adapter pending)
+
+The Android source now defines a transport-neutral `BackendPort` with these operations:
+
+- `getBackendCapabilities()`
+- `fetchNextCandidateBatch(cursor)`
+- `fetchCandidateSnapshot(batchId)`
+- `publishReceipt(bundle)`
+- `verifyPublishedReceipt(receiptId, contentSha256)`
+- `readPublishedStatus()`
+
+The port uses typed batch and receipt bundle models. A receipt bundle must carry candidate and manifest sidecars and full candidate coverage. An upload acknowledgement is deliberately distinct from a verified publication proof.
+
+A returned `RemotePublicationProof` is accepted only when it is valid and matches the configured backend identity (repository plus data branch), expected receipt ID and expected content hash. Contract version 1 is currently the only supported version.
+
 ## Initial integration status
 
-No live backend API is called by this skeleton. Exact read/write paths and receipt semantics will be documented only after reviewing the current backend implementation and agreeing on a stable interface.
+The Kotlin interface and model validation are implemented and covered by unit tests. No live GitHub fetch/push adapter is connected yet. Exact repository paths, candidate history traversal and remote receipt verification semantics must be mapped from the current AutoSubHub backend before implementing that adapter.
