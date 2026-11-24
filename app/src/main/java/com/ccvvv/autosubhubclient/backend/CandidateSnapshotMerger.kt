@@ -38,8 +38,16 @@ class CandidateSnapshotMerger {
     fun mergeFiles(snapshots: List<GitHubReadOnlyTransport.CandidateSnapshot>): MergedBundle {
         require(snapshots.isNotEmpty()) { "At least one verified candidate snapshot is required" }
         val inputs = snapshots.map { snapshot ->
+            val candidateBytes = snapshot.candidateFile.readBytes()
+            val actualHash = sha256(candidateBytes)
+            require(actualHash.equals(snapshot.candidateSha256, ignoreCase = true)) {
+                "Candidate snapshot changed after download at ${snapshot.commit}"
+            }
             val candidate = parseYamlMap(snapshot.candidateFile)
             val manifest = parseYamlMap(snapshot.manifestFile)
+            require((manifest["candidate_sha256"] as? String)?.equals(actualHash, ignoreCase = true) == true) {
+                "Candidate/manifest SHA256 mismatch at ${snapshot.commit}"
+            }
             val nodes = manifest["nodes"] as? List<*>
                 ?: throw IllegalArgumentException("Manifest nodes are missing at ${snapshot.commit}")
             val names = nodes.map { node ->
@@ -206,8 +214,12 @@ class CandidateSnapshotMerger {
         val exponent = decimal.precision() - decimal.scale() - 1
         if (exponent < -4 || exponent >= 16) {
             val mantissa = decimal.movePointLeft(exponent).stripTrailingZeros().toPlainString()
-            val signedExponent = if (exponent >= 0) "+$exponent" else exponent.toString()
-            return mantissa + "e" + signedExponent.padStart(if (exponent < 0) 3 else 2, '0')
+            val signedExponent = if (exponent >= 0) {
+                "+" + exponent.toString().padStart(2, '0')
+            } else {
+                "-" + (-exponent).toString().padStart(2, '0')
+            }
+            return mantissa + "e" + signedExponent
         }
         val plain = decimal.toPlainString()
         return if (plain.contains('.')) plain else "$plain.0"
