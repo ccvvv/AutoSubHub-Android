@@ -8,6 +8,14 @@ import com.ccvvv.autosubhubclient.core.RemotePublicationProof
 import com.ccvvv.autosubhubclient.core.TaskState
 import com.ccvvv.autosubhubclient.core.TaskTransitions
 
+data class StorageSummary(
+    val registeredArtifactCount: Int,
+    val registeredBytes: Long,
+    val cleanupEligibleCount: Int,
+    val cleanupEligibleBytes: Long,
+    val keepLocalCount: Int
+)
+
 data class StoredArtifact(
     val artifactId: String,
     val taskId: String,
@@ -238,6 +246,27 @@ class TaskStore(context: Context) : SQLiteOpenHelper(
             db.endTransaction()
         }
     }
+
+    fun getStorageSummary(): StorageSummary =
+        readableDatabase.rawQuery(
+            """SELECT
+                COUNT(*),
+                COALESCE(SUM(byte_count), 0),
+                COALESCE(SUM(CASE WHEN cleanup_eligible = 1 AND cleaned = 0 AND keep_local_copy = 0 THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN cleanup_eligible = 1 AND cleaned = 0 AND keep_local_copy = 0 THEN byte_count ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN keep_local_copy = 1 AND cleaned = 0 THEN 1 ELSE 0 END), 0)
+            FROM artifacts""".trimIndent(),
+            null
+        ).use { cursor ->
+            cursor.moveToFirst()
+            StorageSummary(
+                registeredArtifactCount = cursor.getInt(0),
+                registeredBytes = cursor.getLong(1),
+                cleanupEligibleCount = cursor.getInt(2),
+                cleanupEligibleBytes = cursor.getLong(3),
+                keepLocalCount = cursor.getInt(4)
+            )
+        }
 
     fun listCleanupEligible(): List<StoredArtifact> =
         readableDatabase.query(
