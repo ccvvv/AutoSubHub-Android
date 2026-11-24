@@ -103,8 +103,22 @@ class TaskStore(context: Context) : SQLiteOpenHelper(
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // Schema migrations are added explicitly; never drop user task data.
-        if (oldVersion != newVersion) {
+        // Migrations are additive; never drop user task data.
+        var version = oldVersion
+        if (version < 2) {
+            db.execSQL(
+                """CREATE TABLE IF NOT EXISTS backend_cursors (
+                    backend_identity TEXT PRIMARY KEY NOT NULL,
+                    last_uploaded_candidate_commit TEXT NOT NULL,
+                    last_receipt_commit TEXT NOT NULL,
+                    last_receipt_id TEXT NOT NULL,
+                    content_sha256 TEXT NOT NULL,
+                    verified_at INTEGER NOT NULL
+                )""".trimIndent()
+            )
+            version = 2
+        }
+        if (version != newVersion) {
             throw IllegalStateException("No migration path from database $oldVersion to $newVersion")
         }
     }
@@ -446,6 +460,6 @@ class TaskStore(context: Context) : SQLiteOpenHelper(
 
     companion object {
         private const val DATABASE_NAME = "autosubhub_tasks.db"
-        private const val DATABASE_VERSION = 1
+        private const val DATABASE_VERSION = 2
     }
 }
