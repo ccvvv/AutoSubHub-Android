@@ -53,6 +53,10 @@ An interrupted or partial receipt is not uploadable and must not advance the que
 
 A successful `git push` exit code is an upload acknowledgement, not by itself a verified publication proof. If remote verification fails or the network is interrupted, retain all local files and retry verification/upload safely.
 
+## Receipt identity
+
+The current Termux receipt schema does not contain a `receipt_id` field. Until the backend schema is versioned to add one, the Android client derives a stable receipt identity as SHA-256 of the exact `receipts/latest.json` bytes. This identity is separate from `candidate_sha256` and from the aggregate bundle hash. Do not rewrite or re-serialize the receipt before deriving this identifier.
+
 ## Hash distinction
 
 The receipt's `candidate_sha256` identifies the candidate YAML snapshot; it is not a hash of the receipt bundle. The Android adapter must calculate and persist a separate deterministic bundle hash covering the receipt JSON and both sidecars. The same canonical bundle hash must be used for upload verification and `RemotePublicationProof.contentSha256`.
