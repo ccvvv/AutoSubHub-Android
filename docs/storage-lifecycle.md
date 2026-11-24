@@ -42,12 +42,19 @@ Only the Backend Adapter may assert `PUBLISHED_CONFIRMED`. It must verify the re
 
 ## Cleanup behavior
 
-1. The Task Coordinator receives a verified publication result.
-2. It writes and fsyncs a compact local audit record containing task ID, batch ID, receipt ID, content hash, remote commit/acknowledgement, timestamp, candidate count, success count and cleanup result.
-3. It atomically marks the payload `CLEANUP_ELIGIBLE`.
-4. Storage Manager deletes only the payload files associated with that task ID, never by broad filename patterns.
-5. It verifies that the files are absent and records `CLEANED` in the audit record.
-6. If deletion is interrupted, the next app start resumes cleanup idempotently. If the audit record cannot be safely written, do not delete the payload.
+1. The Backend Adapter must independently verify the receipt identifier, full bundle/sidecars, expected content hash and remote revision.
+2. `TaskStore.confirmRemotePublication()` persists the proof and advances only a task in `REMOTE_VERIFYING` to `PUBLISHED_CONFIRMED`.
+3. `TaskStore.markCleanupEligible()` re-reads and validates the stored proof in a SQLite transaction before marking task payloads eligible.
+4. `LocalArtifactCleaner` accepts only registered files beneath `filesDir/workspace/tasks/<taskId>/`; it rejects traversal, symbolic links, directories and paths outside that task directory. If an artifact hash is registered, it is checked before deletion.
+5. A `DELETE_PREPARED` audit row is committed before deleting a file. The cleaner verifies the file is absent, marks the artifact cleaned and records the result.
+6. If the process stops after deletion but before the database update, the next cleanup pass recognizes the already-absent eligible file and finalizes the record idempotently. A failed deletion or hash mismatch preserves the file.
+
+## Current implementation status
+
+- Implemented in `app/src/main/java/.../storage/TaskStore.kt`: SQLite task state, artifact registry, remote proof fields, keep-local-copy override, cleanup audit journal and storage summary.
+- Implemented in `LocalArtifactCleaner.kt`: task-directory confinement, symlink/traversal rejection, optional SHA-256 verification, verified deletion and interrupted-deletion recovery.
+- The home screen now displays registered storage totals and a manual cleanup action. The action remains disabled when no verified artifacts are eligible.
+- Important: the backend adapter and real task pipeline are not connected yet. No task can become genuinely remotely confirmed until that adapter is implemented and integrated. The current UI therefore has no real task artifacts to clean.
 
 ## User controls and defaults
 
