@@ -1,50 +1,34 @@
 # Backend Contract (Draft v1)
 
-This document defines the boundary between the Android client and its backend. Candidate history and deduplication are cloud responsibilities; the Android client consumes only a prepared pending queue.
+This document defines the boundary between the Android client and the existing AutoSubHub backend.
 
 ## Client configuration
 
 - `contract_version`: integer, currently `1`
 - `repository_url`: HTTPS GitHub repository URL
-- `data_branch`: backend-published data branch
-- `client_version`: Android app version
+- `data_branch`: backend data branch (default: `published-subscriptions`)
 
-## Cloud-owned queue files
+## Candidate snapshot input
 
-The cloud publishes these files on the configured data branch:
+The phone consumes the original published candidate snapshot; it does not depend on a separate cloud-generated pending queue.
 
-- `candidate/pending.yaml`: cumulative, deduplicated proxy list to be tested by the phone.
-- `candidate/pending-manifest.json`: exact candidate YAML SHA-256 plus node IDs and names.
-- `candidate/pending-meta.json`: latest candidate commit, ordered source commits, batch count, node count, generation time and matching SHA-256.
+- `candidate/subscription.yaml`: candidate proxy list.
+- `candidate/manifest.json`: schema version, exact candidate YAML SHA-256, unique candidate count, and per-node names/IDs.
 
-The cloud builder uses the existing AutoSubHub history/cursor/merge logic. It is triggered when a new candidate snapshot or latest phone receipt is published. If no untested batches remain, it removes the pending files rather than leaving a stale queue available.
+The client resolves the latest commit touching `candidate/subscription.yaml` first, then downloads both files by that immutable commit SHA. It verifies the manifest schema, SHA-256, node identity uniqueness, and that YAML proxy-entry count equals the manifest node count. The snapshot is stored as one immutable local generation.
 
-## Contract rules
+The client does not enumerate historical candidate commits, merge snapshots, or advance the backend candidate cursor. Those responsibilities remain in the existing AutoSubHub/Termux flow until a separately versioned mobile receipt contract is implemented.
 
-1. The client rejects unsupported contract versions.
-2. The backend is authoritative for queue selection, history, deduplication, receipts and published subscriptions.
-3. The Android client downloads the three queue files as one logical generation and verifies exact YAML bytes against both manifest and metadata SHA-256.
-4. Manifest node IDs and names must be unique; metadata counts and candidate commit history must be internally consistent.
-5. Missing, malformed, partially updated or unverifiable queue files stop the task. They must not advance a cursor or authorize cleanup.
-6. Credentials are never embedded in contract documents or committed files.
-7. A local upload attempt is not success; the client independently verifies the remote receipt and sidecars.
+## Receipt upload and confirmation
 
-## Client-side port
+A complete phone receipt must include the exact candidate commit, candidate YAML and manifest sidecars, and one result per manifest node ID. Partial or interrupted tasks are not uploadable.
 
-The transport-neutral `BackendPort` exposes:
+A successful upload acknowledgement is not proof of publication. The client must independently verify the receipt and sidecars at the remote revision before marking local artifacts cleanup-eligible. No local data may be deleted based only on a local probe result or a successful push exit code.
 
-- `getBackendCapabilities()`
-- `fetchPendingQueue()`
-- `publishReceipt(bundle)`
-- `verifyPublishedReceipt(receiptId, contentSha256)`
-- `readPublishedStatus()`
+Credentials and private keys must never be embedded in source or committed files.
 
-`PendingQueueBundle` contains the latest candidate commit, ordered source commits, the three verified local files, the exact candidate SHA-256 and node count. There are no client-side methods for listing candidate history or fetching/merging individual historical snapshots.
+## Current implementation status
 
-A returned `RemotePublicationProof` is accepted only when it is valid and matches the configured backend identity (repository plus data branch), expected receipt ID and expected content hash. Contract version 1 is currently the only supported version.
+The Android client currently supports public-read connection checks and immutable candidate snapshot download/verification. The persisted concurrency setting (default 50, allowed 1–300) is UI configuration only until the real phone probe engine consumes it.
 
-## Initial integration status
-
-The Android read-only transport now verifies the configured GitHub repository/data branch, downloads the cloud-prepared queue through the Contents API, validates the manifest node IDs/names, checks exact YAML SHA-256 against both manifest and metadata, and stores all three files locally. The UI exposes a cloud queue download action.
-
-Receipt upload, SSH key management, full remote bundle verification and the bundled Python/SSH/Mihomo runtime are not implemented yet. The Android app must not grow its own candidate history or deduplication implementation.
+SSH key management, receipt upload, remote receipt verification, Python/SSH/Mihomo runtime packaging, and full on-device end-to-end operation remain incomplete. The existing Termux workflow remains the operational fallback.
