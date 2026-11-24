@@ -45,7 +45,11 @@ class GitHubReadOnlyTransportTest {
                     }
                 }
             )
-            val bundle = transport.fetchCandidateSubscription(workspace)
+            val bundle = try {
+                transport.fetchCandidateSubscription(workspace)
+            } catch (error: IllegalArgumentException) {
+                throw AssertionError("Candidate snapshot test failed: ${error.message}", error)
+            }
             assertEquals(commit, bundle.candidateCommit)
             assertEquals(1, bundle.candidateCount)
             assertEquals(YAML.size, bundle.byteCount)
