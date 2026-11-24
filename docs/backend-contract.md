@@ -19,7 +19,7 @@ This document defines the boundary between the Android client and the backend. I
 
 ## Client-side port (implemented; transport adapter pending)
 
-The Android source now defines a transport-neutral `BackendPort` with these operations:
+The Android source defines a transport-neutral `BackendPort` with these operations:
 
 - `getBackendCapabilities()`
 - `fetchNextCandidateBatch(cursor)`
@@ -34,4 +34,4 @@ A returned `RemotePublicationProof` is accepted only when it is valid and matche
 
 ## Initial integration status
 
-The Kotlin interface, model validation and deterministic candidate cursor planner are implemented and covered by unit tests. The planner preserves the existing behavior: reconcile the local cursor with the remote latest-receipt cursor, use the more advanced cursor, refuse missing cursors, and bootstrap only a bounded recent history when no receipt exists. No live GitHub fetch/push adapter is connected yet. The current AutoSubHub path/history/receipt mapping is documented in [GitHub backend mapping](github-backend-mapping.md); the adapter implementation is the next integration stage.
+The Kotlin interface, model validation and deterministic candidate cursor planner are implemented and covered by unit tests. A public-read `GitHubReadOnlyTransport` now downloads immutable candidate YAML and manifest files by commit SHA, verifies the candidate SHA-256 against the manifest, validates manifest node IDs/names, and reads the latest receipt through the GitHub Contents API. It deliberately has no upload or credential functionality. Candidate history enumeration and deterministic multi-snapshot merge still need the bundled Git transport; receipt upload, SSH key management, and remote bundle verification are not implemented yet. The adapter must preserve the path/history/receipt rules in [GitHub backend mapping](github-backend-mapping.md).
