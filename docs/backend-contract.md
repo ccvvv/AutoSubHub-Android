@@ -26,7 +26,7 @@ The Android source now defines a transport-neutral `BackendPort` with these oper
 - `fetchCandidateSnapshot(batchId)`
 - `publishReceipt(bundle)`
 - `verifyPublishedReceipt(receiptId, contentSha256)`
-- `readPublishedStatus()`
+- `readPublishedStatus()` returns the latest remote revision, receipt ID, candidate commit cursor and verified content hash.
 
 The port uses typed batch and receipt bundle models. A receipt bundle must carry candidate and manifest sidecars and full candidate coverage. An upload acknowledgement is deliberately distinct from a verified publication proof.
 
