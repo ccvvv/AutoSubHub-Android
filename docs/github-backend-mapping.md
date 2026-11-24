@@ -14,18 +14,19 @@ This mapping is based on the current `ccvvv/AutoSubHub` main-branch implementati
 
 All repository names, branch names and paths belong inside the GitHub adapter. The app UI and probe engine must not hard-code them.
 
-## Candidate history algorithm
+## Cloud-prepared pending queue
 
-1. Fetch the configured data branch. If the local Git repository is shallow, deepen/unshallow it before relying on full path history.
-2. List only commits that add or modify `candidate/subscription.yaml` (Git path history with added/modified filtering). A commit that only deletes the path is not a candidate batch.
-3. Read the local uploaded cursor and the remote `receipts/latest.json` `candidate_commit`.
-4. If either cursor is present but is absent from candidate history, stop and preserve state. Never silently skip history.
-5. If both cursors exist, choose the more advanced cursor (the one closer to the newest end of newest-first history). If no cursor exists, bootstrap a bounded latest window of 20 candidate commits.
-6. Return pending commits oldest-to-newest so snapshot merge order is deterministic.
-7. For every pending commit, download its immutable `candidate/subscription.yaml` and `manifest.json` by commit SHA. Try GitHub Raw and the configured mirrors in order; verify the candidate SHA-256 against the manifest before accepting either file.
-8. Merge snapshots by canonical proxy fingerprint: JSON-encode proxy configuration with sorted keys after removing the display `name`, then SHA-256. Keep the first proxy configuration/name and record all source commits/names. The manifest node ID is that fingerprint. Resolve duplicate display names with the fingerprint suffix.
+The cloud owns candidate history, cursor reconciliation, immutable snapshot downloads, canonical fingerprint deduplication, merge order, and provenance. The Android client must not enumerate candidate history or merge candidate snapshots.
 
-The Kotlin `CandidateQueuePlanner` already implements cursor reconciliation and order selection. `JGitCandidateHistoryReader` now fetches the configured branch through embedded JGit and derives path history locally, classifying each commit against its first parent so only `ADD` and `MODIFY` changes are retained. This avoids one REST API request per historical commit and avoids bundling a shell Git executable. `BackendCursorPolicy` validates that cursor advancement is bound to the verified backend and remote receipt commit; `TaskStore` persists that cursor only after this policy succeeds. Snapshot download, hash verification and deterministic merge remain to be connected to the history reader.
+The cloud publishes three files on the configured data branch:
+
+- `candidate/pending.yaml`: cumulative, deduplicated proxy list ready for phone probing.
+- `candidate/pending-manifest.json`: node IDs/names and SHA-256 of the exact YAML bytes.
+- `candidate/pending-meta.json`: latest candidate commit, ordered source commits, batch count, node count, generation time and matching SHA-256.
+
+`build-pending-queue.yml` runs when `candidate/subscription.yaml` or `receipts/latest.json` changes on `published-subscriptions`. It uses the existing cloud-side `scripts/candidate_queue.py` implementation to reconcile the remote receipt cursor, fetch immutable snapshots, verify each snapshot, and merge by canonical fingerprint. It then publishes the prepared queue. If no untested batches remain, it removes stale pending files so the phone cannot accidentally test an already-consumed queue.
+
+The Android client only downloads these three files, verifies their hashes, manifest node identities and metadata counts, and stores the exact bytes locally. It does not run Git history, YAML merge, or fingerprint logic. A missing, malformed or unverifiable cloud queue must stop the task without advancing any cursor or deleting local data.
 
 ## Receipt validation before upload
 
