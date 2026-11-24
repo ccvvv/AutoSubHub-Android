@@ -261,12 +261,44 @@ class TaskStore(context: Context) : SQLiteOpenHelper(
     }
 
     fun markArtifactCleaned(artifactId: String) {
-        val values = ContentValues().apply {
-            put("cleaned", 1)
-            put("cleanup_eligible", 0)
-        }
-        check(writableDatabase.update("artifacts", values, "artifact_id = ?", arrayOf(artifactId)) == 1) {
-            "Unknown artifact: $artifactId"
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val taskId = db.query(
+                "artifacts",
+                arrayOf("task_id"),
+                "artifact_id = ?",
+                arrayOf(artifactId),
+                null,
+                null,
+                null
+            ).use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            } ?: throw IllegalArgumentException("Unknown artifact: $artifactId")
+
+            val values = ContentValues().apply {
+                put("cleaned", 1)
+                put("cleanup_eligible", 0)
+            }
+            check(db.update("artifacts", values, "artifact_id = ?", arrayOf(artifactId)) == 1)
+
+            val remaining = db.rawQuery(
+                "SELECT COUNT(*) FROM artifacts WHERE task_id = ? AND cleaned = 0 AND keep_local_copy = 0",
+                arrayOf(taskId)
+            ).use { cursor ->
+                cursor.moveToFirst()
+                cursor.getInt(0)
+            }
+            if (remaining == 0 && getTaskState(taskId) == TaskState.CLEANUP_ELIGIBLE) {
+                val taskValues = ContentValues().apply {
+                    put("state", TaskState.CLEANED.name)
+                    put("updated_at", System.currentTimeMillis())
+                }
+                db.update("tasks", taskValues, "task_id = ?", arrayOf(taskId))
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
         }
     }
 
