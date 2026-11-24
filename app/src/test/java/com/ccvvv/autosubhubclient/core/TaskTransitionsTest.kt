@@ -22,7 +22,7 @@ class TaskTransitionsTest {
             verifiedAtEpochMillis = 1L,
             completeBundleVerified = true
         )
-        val artifact = LocalArtifact("batch-1", "receipts/receipt.json", 100)
+        val artifact = LocalArtifact("batch-1", "receipts/receipt.json", 100, sha256 = null)
         assertTrue(artifact.isCleanupEligible(TaskState.CLEANUP_ELIGIBLE, proof))
     }
 
