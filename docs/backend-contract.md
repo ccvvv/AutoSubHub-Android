@@ -17,7 +17,7 @@ This document defines the boundary between the Android client and the backend. I
 4. Credentials are never embedded in contract documents or committed files.
 5. Any schema change must be documented and tested before the client depends on it.
 
-## Client-side port (implemented; transport adapter pending)
+## Client-side port (implemented; transport adapter in progress)
 
 The Android source defines a transport-neutral `BackendPort` with these operations:
 
@@ -34,4 +34,4 @@ A returned `RemotePublicationProof` is accepted only when it is valid and matche
 
 ## Initial integration status
 
-The Kotlin interface, model validation and deterministic candidate cursor planner are implemented and covered by unit tests. A public-read `GitHubReadOnlyTransport` now downloads immutable candidate YAML and manifest files by commit SHA, verifies the candidate SHA-256 against the manifest, validates manifest node IDs/names, and reads the latest receipt through the GitHub Contents API. It deliberately has no upload or credential functionality. Candidate history enumeration and deterministic multi-snapshot merge still need the bundled Git transport; receipt upload, SSH key management, and remote bundle verification are not implemented yet. The adapter must preserve the path/history/receipt rules in [GitHub backend mapping](github-backend-mapping.md).
+The Kotlin interface, model validation and deterministic candidate cursor planner are implemented and covered by unit tests. A public-read `GitHubReadOnlyTransport` now downloads immutable candidate YAML and manifest files by commit SHA, verifies the candidate SHA-256 against the manifest, validates manifest node IDs/names, and reads the latest receipt through the GitHub Contents API. The connection check also verifies the configured repository branch before interpreting a missing receipt as an empty initial state. It deliberately has no upload or credential functionality. Candidate history enumeration and deterministic multi-snapshot merge still need the bundled Git transport; receipt upload, SSH key management, and remote bundle verification are not implemented yet. The adapter must preserve the path/history/receipt rules in [GitHub backend mapping](github-backend-mapping.md).
