@@ -96,6 +96,11 @@ class GitHubReadOnlyTransport(
     }
 
     private fun readLatestReceiptRequired(): LatestReceipt {
+        // Verify the repository and configured branch first. A missing receipt must not
+        // make a nonexistent repository or mistyped branch look like a successful connection.
+        val branchUrl = GitHubBackendEndpoints.branch(config)
+        request(branchUrl, GITHUB_JSON)
+
         val contentsUrl = GitHubBackendEndpoints.contentsFile(
             config, "receipts/latest.json", config.dataBranch
         )
