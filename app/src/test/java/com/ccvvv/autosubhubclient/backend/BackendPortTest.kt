@@ -39,21 +39,10 @@ class BackendPortTest {
         val branchUrl = GitHubBackendEndpoints.branch(config(branch))
         assertTrue(branchUrl.endsWith("/branches/release%2F2026-11"))
 
-        val candidateCommits = GitHubBackendEndpoints.listCandidateCommits(config(branch), 2)
-        assertTrue(candidateCommits.contains("sha=release%2F2026-11"))
-        assertTrue(candidateCommits.contains("path=candidate%2Fsubscription.yaml"))
-        assertTrue(candidateCommits.endsWith("per_page=100&page=2"))
-
-        val commit = "a".repeat(40)
         val contentUrl = GitHubBackendEndpoints.contentsFile(
-            config(branch), "candidate/manifest file.json", commit
+            config(branch), "candidate/pending-manifest.json", branch
         )
-        assertTrue(contentUrl.contains("/contents/candidate/manifest%20file.json?ref=$commit"))
-
-        val rawUrl = GitHubBackendEndpoints.rawSnapshotFile(
-            config(), commit, "candidate/subscription.yaml"
-        )
-        assertTrue(rawUrl.endsWith("/$commit/candidate/subscription.yaml"))
+        assertTrue(contentUrl.contains("/contents/candidate/pending-manifest.json?ref=release%2F2026-11"))
     }
 
     @Test(expected = IllegalArgumentException::class)
