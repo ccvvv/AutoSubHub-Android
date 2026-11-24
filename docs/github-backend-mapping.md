@@ -25,7 +25,7 @@ All repository names, branch names and paths belong inside the GitHub adapter. T
 7. For every pending commit, download its immutable `candidate/subscription.yaml` and `manifest.json` by commit SHA. Try GitHub Raw and the configured mirrors in order; verify the candidate SHA-256 against the manifest before accepting either file.
 8. Merge snapshots by canonical proxy fingerprint: JSON-encode proxy configuration with sorted keys after removing the display `name`, then SHA-256. Keep the first proxy configuration/name and record all source commits/names. The manifest node ID is that fingerprint. Resolve duplicate display names with the fingerprint suffix.
 
-The Kotlin `CandidateQueuePlanner` already implements cursor reconciliation and order selection. Snapshot download, hash verification and deterministic merge remain to be implemented in the GitHub adapter/probe input pipeline.
+The Kotlin `CandidateQueuePlanner` already implements cursor reconciliation and order selection. `BackendCursorPolicy` validates that cursor advancement is bound to the verified backend and remote receipt commit; `TaskStore` persists that cursor only after this policy succeeds. Snapshot download, hash verification and deterministic merge remain to be implemented in the GitHub adapter/probe input pipeline.
 
 ## Receipt validation before upload
 
@@ -49,7 +49,7 @@ An interrupted or partial receipt is not uploadable and must not advance the que
 3. Stage exactly the configured receipt path plus `receipts/candidate.yaml` and `receipts/manifest.json`.
 4. Commit and push normally. On a concurrent update, fetch and fast-forward rebase, retry at most three times. Never force-push.
 5. After GitHub accepts the push, fetch the remote branch again and verify that the receipt and both sidecars are present at the accepted remote revision and match their expected hashes/coverage.
-6. Only then persist the local cursor and allow Storage Manager cleanup.
+6. Only then persist the local cursor in SQLite and allow Storage Manager cleanup. The cursor policy requires the proof backend identity and remote revision to match the configured backend and accepted receipt commit.
 
 A successful `git push` exit code is an upload acknowledgement, not by itself a verified publication proof. If remote verification fails or the network is interrupted, retain all local files and retry verification/upload safely.
 
