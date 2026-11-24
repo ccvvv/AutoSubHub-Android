@@ -9,6 +9,8 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import com.ccvvv.autosubhubclient.storage.LocalArtifactCleaner
 import com.ccvvv.autosubhubclient.storage.TaskStore
 import com.ccvvv.autosubhubclient.runtime.RuntimeEnvironment
@@ -17,6 +19,7 @@ import com.ccvvv.autosubhubclient.backend.BackendConfig
 import com.ccvvv.autosubhubclient.backend.GitHubReadOnlyTransport
 
 class MainActivity : Activity() {
+    private val ioExecutor: ExecutorService = Executors.newFixedThreadPool(2)
     private val taskStore by lazy { TaskStore(applicationContext) }
     private val preferences by lazy {
         getSharedPreferences("client_settings", MODE_PRIVATE)
@@ -114,9 +117,13 @@ class MainActivity : Activity() {
                     backendStatus.text = "配置错误：${error.message}"
                     return@setOnClickListener
                 }
+                preferences.edit()
+                    .putString(KEY_BACKEND_URL, config.repositoryUrl.trimEnd('/'))
+                    .putString(KEY_DATA_BRANCH, config.dataBranch)
+                    .apply()
                 isEnabled = false
                 backendStatus.text = "正在读取 GitHub 回执（后台执行）…"
-                Thread {
+                ioExecutor.execute {
                     try {
                         val latest = GitHubReadOnlyTransport(config).readLatestReceipt()
                         val message = if (latest.receiptCommit == null) {
@@ -125,16 +132,16 @@ class MainActivity : Activity() {
                             "仓库连接成功\n最新回执状态：${latest.status ?: "未知"}\n候选版本：${latest.candidateCommit ?: "未知"}\n回执标识：${latest.receiptId?.take(12) ?: "未知"}\n远端回执提交：${latest.receiptCommit}"
                         }
                         runOnUiThread {
-                            if (!isFinishing) {
+                            if (!isFinishing && !isDestroyed) {
                                 backendStatus.text = message
-                                isEnabled = true
+                                connectButton.isEnabled = true
                             }
                         }
                     } catch (error: Exception) {
                         runOnUiThread {
-                            if (!isFinishing) {
+                            if (!isFinishing && !isDestroyed) {
                                 backendStatus.text = "连接失败：${error.message ?: error.javaClass.simpleName}"
-                                isEnabled = true
+                                connectButton.isEnabled = true
                             }
                         }
                     }
@@ -157,10 +164,10 @@ class MainActivity : Activity() {
             text = "执行 ELF 自检（无害测试程序）"
             setOnClickListener {
                 isEnabled = false
-                Thread {
+                ioExecutor.execute {
                     val result = RuntimeExecutionProbe(this@MainActivity).runSelfTest()
                     runOnUiThread {
-                        if (!isFinishing) {
+                        if (!isFinishing && !isDestroyed) {
                             runtimeStatus.text = RuntimeEnvironment.inspect(
                                 this@MainActivity,
                                 elfExecutionVerified = result.success
@@ -202,11 +209,12 @@ class MainActivity : Activity() {
             isEnabled = storageSummary.cleanupEligibleCount > 0
             setOnClickListener {
                 isEnabled = false
-                Thread {
+                ioExecutor.execute {
                     val result = LocalArtifactCleaner(this@MainActivity, taskStore)
                         .cleanConfirmedArtifacts()
                     val updated = taskStore.getStorageSummary()
                     runOnUiThread {
+                        if (isFinishing || isDestroyed) return@runOnUiThread
                         storageStatus.text = buildStorageText(updated)
                         text = if (updated.cleanupEligibleCount > 0) {
                             "清理剩余已确认文件"
@@ -230,6 +238,11 @@ class MainActivity : Activity() {
         root.addView(footer)
 
         setContentView(root)
+    }
+
+    override fun onDestroy() {
+        ioExecutor.shutdownNow()
+        super.onDestroy()
     }
 
     private fun buildStorageText(summary: com.ccvvv.autosubhubclient.storage.StorageSummary): String =
