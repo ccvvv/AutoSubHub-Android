@@ -179,8 +179,9 @@ class MainActivity : Activity() {
                         val message = "原始候选订阅下载并校验成功" +
                             "\n待测节点：${candidate.candidateCount}" +
                             "\n文件大小：${candidate.byteCount} 字节" +
+                            "\n候选提交：${candidate.candidateCommit}" +
                             "\nSHA256：${candidate.candidateSha256}" +
-                            "\n本地文件：${candidate.candidateFile.name}"
+                            "\n本地文件：${candidate.candidateFile.name} + manifest.json"
                         runOnUiThread {
                             if (!isFinishing && !isDestroyed) {
                                 backendStatus.text = message
