@@ -37,7 +37,7 @@ class BackendPortTest {
     fun endpointBuilderEncodesBranchAndPathWithoutChangingPathSeparators() {
         val branch = "release/2026-11"
         val branchUrl = GitHubBackendEndpoints.branch(config(branch))
-        assertTrue(branchUrl.endsWith("/branches/release/2026-11"))
+        assertTrue(branchUrl.endsWith("/branches/release%2F2026-11"))
 
         val candidateCommits = GitHubBackendEndpoints.listCandidateCommits(config(branch), 2)
         assertTrue(candidateCommits.contains("sha=release%2F2026-11"))
