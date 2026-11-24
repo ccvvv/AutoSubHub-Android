@@ -56,13 +56,6 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
-        unitTests.all {
-            testLogging {
-                events("failed")
-                exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
-                showStandardStreams = true
-            }
-        }
     }
 
     kotlinOptions {
@@ -71,6 +64,15 @@ android {
 
     buildFeatures {
         buildConfig = true
+    }
+}
+
+
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showStandardStreams = true
     }
 }
 
