@@ -8,6 +8,15 @@ import com.ccvvv.autosubhubclient.core.RemotePublicationProof
 import com.ccvvv.autosubhubclient.core.TaskState
 import com.ccvvv.autosubhubclient.core.TaskTransitions
 
+data class BackendCursor(
+    val backendIdentity: String,
+    val lastUploadedCandidateCommit: String,
+    val lastReceiptCommit: String,
+    val lastReceiptId: String,
+    val contentSha256: String,
+    val verifiedAtEpochMillis: Long
+)
+
 data class StorageSummary(
     val registeredArtifactCount: Int,
     val registeredBytes: Long,
@@ -77,6 +86,16 @@ class TaskStore(context: Context) : SQLiteOpenHelper(
                 event TEXT NOT NULL,
                 detail TEXT NOT NULL,
                 created_at INTEGER NOT NULL
+            )""".trimIndent()
+        )
+        db.execSQL(
+            """CREATE TABLE backend_cursors (
+                backend_identity TEXT PRIMARY KEY NOT NULL,
+                last_uploaded_candidate_commit TEXT NOT NULL,
+                last_receipt_commit TEXT NOT NULL,
+                last_receipt_id TEXT NOT NULL,
+                content_sha256 TEXT NOT NULL,
+                verified_at INTEGER NOT NULL
             )""".trimIndent()
         )
         db.execSQL("CREATE INDEX idx_artifacts_task ON artifacts(task_id)")
@@ -245,6 +264,60 @@ class TaskStore(context: Context) : SQLiteOpenHelper(
         } finally {
             db.endTransaction()
         }
+    }
+
+    fun getBackendCursor(backendIdentity: String): BackendCursor? {
+        require(backendIdentity.isNotBlank())
+        return readableDatabase.query(
+            "backend_cursors",
+            arrayOf(
+                "backend_identity", "last_uploaded_candidate_commit", "last_receipt_commit",
+                "last_receipt_id", "content_sha256", "verified_at"
+            ),
+            "backend_identity = ?",
+            arrayOf(backendIdentity),
+            null,
+            null,
+            null
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) null else BackendCursor(
+                backendIdentity = cursor.getString(0),
+                lastUploadedCandidateCommit = cursor.getString(1),
+                lastReceiptCommit = cursor.getString(2),
+                lastReceiptId = cursor.getString(3),
+                contentSha256 = cursor.getString(4),
+                verifiedAtEpochMillis = cursor.getLong(5)
+            )
+        }
+    }
+
+    /** Cursor advancement is forbidden until a matching remote proof is supplied. */
+    fun saveBackendCursorAfterVerifiedUpload(
+        backendIdentity: String,
+        candidateCommit: String,
+        receiptCommit: String,
+        proof: RemotePublicationProof
+    ) {
+        val commitPattern = Regex("(?i)^[a-f0-9]{40}$")
+        require(candidateCommit.matches(commitPattern)) { "Invalid candidate commit" }
+        require(receiptCommit.matches(commitPattern)) { "Invalid receipt commit" }
+        require(proof.isValid()) { "Remote publication proof is invalid" }
+        require(proof.backendIdentity == backendIdentity) { "Proof belongs to another backend" }
+        require(proof.remoteRevision.equals(receiptCommit, ignoreCase = true)) {
+            "Proof revision does not match the accepted receipt commit"
+        }
+
+        val values = ContentValues().apply {
+            put("backend_identity", backendIdentity)
+            put("last_uploaded_candidate_commit", candidateCommit.lowercase())
+            put("last_receipt_commit", receiptCommit.lowercase())
+            put("last_receipt_id", proof.receiptId)
+            put("content_sha256", proof.contentSha256.lowercase())
+            put("verified_at", proof.verifiedAtEpochMillis)
+        }
+        writableDatabase.insertWithOnConflict(
+            "backend_cursors", null, values, SQLiteDatabase.CONFLICT_REPLACE
+        )
     }
 
     fun getStorageSummary(): StorageSummary =
