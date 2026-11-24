@@ -5,6 +5,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import com.ccvvv.autosubhubclient.core.RemotePublicationProof
+import com.ccvvv.autosubhubclient.backend.BackendCursorPolicy
 import com.ccvvv.autosubhubclient.core.TaskState
 import com.ccvvv.autosubhubclient.core.TaskTransitions
 
@@ -312,22 +313,16 @@ class TaskStore(context: Context) : SQLiteOpenHelper(
         receiptCommit: String,
         proof: RemotePublicationProof
     ) {
-        val commitPattern = Regex("(?i)^[a-f0-9]{40}$")
-        require(candidateCommit.matches(commitPattern)) { "Invalid candidate commit" }
-        require(receiptCommit.matches(commitPattern)) { "Invalid receipt commit" }
-        require(proof.isValid()) { "Remote publication proof is invalid" }
-        require(proof.backendIdentity == backendIdentity) { "Proof belongs to another backend" }
-        require(proof.remoteRevision.equals(receiptCommit, ignoreCase = true)) {
-            "Proof revision does not match the accepted receipt commit"
-        }
-
+        val advance = BackendCursorPolicy.validate(
+            backendIdentity, candidateCommit, receiptCommit, proof
+        )
         val values = ContentValues().apply {
-            put("backend_identity", backendIdentity)
-            put("last_uploaded_candidate_commit", candidateCommit.lowercase())
-            put("last_receipt_commit", receiptCommit.lowercase())
-            put("last_receipt_id", proof.receiptId)
-            put("content_sha256", proof.contentSha256.lowercase())
-            put("verified_at", proof.verifiedAtEpochMillis)
+            put("backend_identity", advance.backendIdentity)
+            put("last_uploaded_candidate_commit", advance.candidateCommit)
+            put("last_receipt_commit", advance.receiptCommit)
+            put("last_receipt_id", advance.receiptId)
+            put("content_sha256", advance.contentSha256)
+            put("verified_at", advance.verifiedAtEpochMillis)
         }
         writableDatabase.insertWithOnConflict(
             "backend_cursors", null, values, SQLiteDatabase.CONFLICT_REPLACE
