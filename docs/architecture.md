@@ -4,14 +4,14 @@
 
 The Android client is a standalone product. It must not import, build, or vendor the AutoSubHub backend repository.
 
-The client connects to a configurable backend through a versioned contract. Backend implementation details remain behind that contract. The backend remains the authority for candidate queues, receipts and published subscriptions.
+The client connects to a configurable backend through a versioned contract. AutoSubHub remains authoritative for candidate data, receipt validation and final subscription publication.
 
 ## High-level system
 
 ```text
 Android UI
   └─ Task Coordinator ── Persistent Task Store
-       ├─ Backend Port ── GitHub Git Adapter (first backend)
+       ├─ Backend Port ── GitHub read / SSH upload adapter
        ├─ Probe Port ──── Probe Engine
        │                    ├─ Python + packages
        │                    ├─ Mihomo ARM64 process
@@ -22,16 +22,32 @@ Runtime Manager: Python, Git, OpenSSH, Mihomo, minimal shell
 Security Manager: SSH keys, credentials, encrypted user-controlled backup
 ```
 
-The UI never launches shell commands directly. It sends typed commands to the Task Coordinator. The Probe Engine never reads GitHub credentials or decides which repository/branch to use. The Storage Manager never decides whether a receipt was uploaded; it only deletes files after receiving verified cleanup eligibility from the Task Coordinator.
+The UI sends typed commands to the Task Coordinator. The Probe Engine does not read GitHub credentials or decide which repository/branch to use. The Storage Manager deletes files only after receiving verified remote-publication proof.
+
+## Candidate snapshot lifecycle
+
+1. Validate the configured repository and data branch.
+2. Resolve the latest commit touching `candidate/subscription.yaml`.
+3. Download the YAML and `candidate/manifest.json` from that immutable commit.
+4. Verify exact YAML SHA-256, manifest schema, node identities and candidate count.
+5. Store both files atomically as one immutable local generation.
+6. Pass the exact candidate commit and snapshot to the Probe Engine.
+
+The app does not build a parallel candidate-history merger or cursor. The existing Termux workflow remains the operational fallback until the Android runtime and receipt uploader are proven compatible.
+
+## Probe and receipt lifecycle
+
+The Task Coordinator supplies an immutable job input, candidate snapshot, manifest, and probe options including user-selected concurrency. The Probe Engine returns one result per candidate plus receipt JSON, candidate/manifest sidecars, hashes and diagnostics. It does not upload receipts or store Git credentials.
+
+An interrupted task is not a completed receipt. A complete local probe is not equivalent to a published receipt. Upload acknowledgement is not remote verification. Local artifacts become cleanup-eligible only after the remote receipt and sidecars are independently verified.
 
 ## Logical modules
 
-The first Gradle build may remain a single Android module. These are logical boundaries; split Gradle modules only when useful.
+The first Gradle build may remain a single Android module. Split modules only when useful.
 
 | Module | Responsibility | Must not own |
 | --- | --- | --- |
 | `app` | Screens, navigation, user actions, status | Git commands, probe algorithm |
-| `core:domain` | Task models, state machine, result types | Android widgets, backend paths |
 | `core:task` | Queue, pause/resume/cancel, recovery | GitHub-specific paths |
 | `core:backend-api` | Backend ports and versioned contract | Probe process execution |
 | `backend:github-git` | Git fetch/push, branch mapping, remote verification | UI and probe algorithm |
@@ -40,52 +56,6 @@ The first Gradle build may remain a single Android module. These are logical bou
 | `core:security` | SSH key lifecycle and secret protection | Receipt lifecycle |
 | `core:storage` | Local files, task database, retention and safe cleanup | Publishing decisions |
 
-## Stable component boundaries
-
-### BackendPort
-
-The Task Coordinator calls transport-neutral operations:
-
-- `getBackendCapabilities()`
-- `fetchPendingQueue()`
-- `publishReceipt(receiptBundle)`
-- `verifyPublishedReceipt(receiptId, contentHash)`
-- `readPublishedStatus()`
-
-The cloud owns candidate history traversal, cursor reconciliation, immutable snapshot retrieval, deduplication and merge. It publishes one cumulative pending queue plus manifest and metadata. The Android adapter only downloads and verifies those three files from the configured repository/data branch. Receipt upload and remote commit verification remain in the adapter. A future HTTP backend can implement the same port without changing the UI or Probe Engine.
-
-### ProbePort
-
-The Task Coordinator supplies an immutable job input: contract version, latest candidate commit, ordered source commit list, cloud-prepared candidate YAML, matching manifest/metadata, expected hashes and probe options.
-
-The Probe Engine returns receipt JSON, candidate/manifest sidecars, hashes, coverage summary and structured diagnostics. It does not download candidates, upload receipts, advance backend cursors or store Git credentials.
-
-### StoragePort
-
-The Task Coordinator records each artifact's type, task ID, path, size, hash, creation time and lifecycle state. Storage Manager performs cleanup only for artifacts explicitly marked eligible. It must never infer upload success from a filename, timestamp, UI label or local Git push exit code alone.
-
-## Task lifecycle
-
-1. Connect and validate backend identity, contract version and permissions.
-2. Download the cloud-prepared cumulative pending queue.
-3. Verify manifest, metadata, hashes and candidate coverage before testing.
-4. Run the existing probe behavior through the local runtime.
-5. Atomically save the complete receipt and its candidate/manifest sidecars.
-6. Upload the complete bundle through the backend adapter.
-7. Independently verify the remote receipt and its content hash/commit.
-8. Only after remote verification succeeds, mark the task `PUBLISHED_CONFIRMED`, advance the local cursor and make its uploaded artifacts eligible for cleanup.
-9. Storage Manager removes eligible large files according to the retention policy, while retaining a small local audit record.
-
-If any step fails, preserve the candidate inputs, receipt, sidecars and diagnostics needed to retry or investigate. A completed local probe is not equivalent to a published receipt.
-
-## Storage and cleanup
-
-The Storage Manager is a first-class subsystem. See [storage lifecycle](storage-lifecycle.md). Its safety invariant is: **never delete the only copy of a result that has not been verified on the backend**.
-
-## Runtime packaging gate
-
-Before bundling executable tools, prove on Android 14–16 that the selected packaging and execution method works with this app's own package ID and target SDK. Do not assume extracting an ELF into an app-writable directory makes it executable.
-
 ## Performance gate
 
-The existing probe algorithm is the reference implementation. Compare old Termux and new app on the same device, candidate set and network. Record elapsed time, throughput, success count, real connection speed, CPU, memory, temperature and long-run stability. A 300-worker setting is a target, not a claim of verified capacity.
+Concurrency is a user setting (default 50, configurable from 1 to 300). The selected value must be passed to the actual probe scheduler; storing or displaying the value alone does not prove concurrency support. Compare Termux and Android on the same device, candidate set and network. Record elapsed time, throughput, success count, CPU, memory, temperature and long-run stability. 300 is a configurable ceiling, not a verified performance claim.
