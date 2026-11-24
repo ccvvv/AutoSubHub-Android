@@ -41,32 +41,6 @@ class GitHubReadOnlyTransport(
         val receiptCommit: String?
     )
 
-    /** Returns candidate commits newest-first, excluding commits that deleted the snapshot. */
-    fun listCandidateHistoryNewestFirst(maxCommits: Int = 500): List<String> {
-        require(maxCommits in 1..1000)
-        val history = mutableListOf<String>()
-        var page = 1
-        while (history.size < maxCommits) {
-            val url = GitHubBackendEndpoints.listCandidateCommits(config, page)
-            val items = JSONArray(String(request(url, GITHUB_JSON), Charsets.UTF_8))
-            if (items.length() == 0) break
-            for (index in 0 until items.length()) {
-                val item = items.getJSONObject(index)
-                val sha = item.getString("sha").lowercase()
-                require(sha.matches(Regex("^[a-f0-9]{40}$"))) {
-                    "GitHub returned an invalid candidate commit ID"
-                }
-                if (commitAddsOrModifiesCandidate(sha)) history += sha
-                if (history.size >= maxCommits) break
-            }
-            if (items.length() < 100) break
-            page++
-        }
-        require(history.isNotEmpty()) { "No candidate subscription history found on configured branch" }
-        require(history.distinct().size == history.size) { "GitHub returned duplicate candidate commits" }
-        return history
-    }
-
     /** Downloads an immutable candidate snapshot and verifies its SHA256 against manifest.json. */
     fun fetchCandidateSnapshot(commit: String, workspace: File): CandidateSnapshot {
         require(commit.matches(Regex("(?i)^[a-f0-9]{40}$"))) { "Invalid candidate commit" }
@@ -112,13 +86,17 @@ class GitHubReadOnlyTransport(
         return CandidateSnapshot(commit, candidateFile, manifestFile, actualHash, nodes.length())
     }
 
-    /** Reads the current receipt and the commit that last changed receipts/latest.json. */
+    /** Reads the current receipt via the Contents API, so slash-containing branch names remain safe. */
     fun readLatestReceipt(): LatestReceipt {
-        val (owner, repository) = config.ownerAndRepository
-        val receiptUrl = "https://raw.githubusercontent.com/$owner/$repository/" +
-            "${encodeRefForRaw(config.dataBranch)}/receipts/latest.json"
-        val receiptBytes = request(receiptUrl, GITHUB_RAW)
+        val contentsUrl = GitHubBackendEndpoints.contentsFile(
+            config, "receipts/latest.json", config.dataBranch
+        )
+        val contents = JSONObject(String(request(contentsUrl, GITHUB_JSON), Charsets.UTF_8))
+        val encoded = contents.optString("content", "").replace("\\n", "").replace("\\r", "").trim()
+        require(encoded.isNotEmpty()) { "GitHub returned an empty latest receipt file" }
+        val receiptBytes = java.util.Base64.getMimeDecoder().decode(encoded)
         val receipt = JSONObject(String(receiptBytes, Charsets.UTF_8))
+        val (owner, repository) = config.ownerAndRepository
         val historyUrl = "https://api.github.com/repos/$owner/$repository/commits" +
             "?sha=${encodeQuery(config.dataBranch)}&path=receipts/latest.json&per_page=1&page=1"
         val history = JSONArray(String(request(historyUrl, GITHUB_JSON), Charsets.UTF_8))
@@ -132,20 +110,6 @@ class GitHubReadOnlyTransport(
             status = receipt.optString("status").takeIf { it.isNotBlank() },
             receiptCommit = receiptCommit
         )
-    }
-
-    private fun commitAddsOrModifiesCandidate(commit: String): Boolean {
-        val (owner, repository) = config.ownerAndRepository
-        val url = "https://api.github.com/repos/$owner/$repository/commits/$commit"
-        val details = JSONObject(String(request(url, GITHUB_JSON), Charsets.UTF_8))
-        val files = details.optJSONArray("files") ?: return false
-        for (index in 0 until files.length()) {
-            val file = files.getJSONObject(index)
-            if (file.optString("filename") == "candidate/subscription.yaml" &&
-                file.optString("status") in setOf("added", "modified")
-            ) return true
-        }
-        return false
     }
 
     private fun request(url: String, accept: String): ByteArray {
@@ -192,12 +156,12 @@ class GitHubReadOnlyTransport(
                 stream.write(bytes)
                 stream.flush()
             }
-            if (destination.exists() && !destination.delete()) {
-                throw IllegalStateException("Cannot replace existing snapshot file")
-            }
-            if (!temporary.renameTo(destination)) {
-                throw IllegalStateException("Cannot atomically finalize snapshot file")
-            }
+            java.nio.file.Files.move(
+                temporary.toPath(),
+                destination.toPath(),
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING
+            )
         } finally {
             if (temporary.exists()) temporary.delete()
         }
