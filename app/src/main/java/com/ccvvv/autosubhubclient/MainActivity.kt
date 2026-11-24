@@ -122,7 +122,7 @@ class MainActivity : Activity() {
                         val message = if (latest.receiptCommit == null) {
                             "仓库连接成功；当前数据分支尚无最新回执"
                         } else {
-                            "仓库连接成功\\n最新回执状态：${latest.status ?: "未知"}\\n候选版本：${latest.candidateCommit ?: "未知"}\\n回执标识：${latest.receiptId?.take(12) ?: "未知"}\\n远端回执提交：${latest.receiptCommit}"
+                            "仓库连接成功\n最新回执状态：${latest.status ?: "未知"}\n候选版本：${latest.candidateCommit ?: "未知"}\n回执标识：${latest.receiptId?.take(12) ?: "未知"}\n远端回执提交：${latest.receiptCommit}"
                         }
                         runOnUiThread {
                             if (!isFinishing) {
@@ -145,7 +145,7 @@ class MainActivity : Activity() {
         val runtimeStatus = TextView(this).apply {
             textSize = 13f
             text = RuntimeEnvironment.inspect(this@MainActivity).summary() +
-                "\\n基础探针已随 APK 打包；Python/Git/SSH/Mihomo 尚未内置"
+                "\n基础探针已随 APK 打包；Python/Git/SSH/Mihomo 尚未内置"
         }
         root.addView(TextView(this).apply {
             text = "运行环境"
@@ -164,7 +164,7 @@ class MainActivity : Activity() {
                             runtimeStatus.text = RuntimeEnvironment.inspect(
                                 this@MainActivity,
                                 elfExecutionVerified = result.success
-                            ).summary() + "\\n" + result.detail
+                            ).summary() + "\n" + result.detail
                             isEnabled = true
                             Toast.makeText(
                                 this@MainActivity,
@@ -233,8 +233,8 @@ class MainActivity : Activity() {
     }
 
     private fun buildStorageText(summary: com.ccvvv.autosubhubclient.storage.StorageSummary): String =
-        "已登记 ${summary.registeredArtifactCount} 个文件（${formatBytes(summary.registeredBytes)}）\\n" +
-            "远端确认后可清理：${summary.cleanupEligibleCount} 个（${formatBytes(summary.cleanupEligibleBytes)}）\\n" +
+        "已登记 ${summary.registeredArtifactCount} 个文件（${formatBytes(summary.registeredBytes)}）\n" +
+            "远端确认后可清理：${summary.cleanupEligibleCount} 个（${formatBytes(summary.cleanupEligibleBytes)}）\n" +
             "保留本地副本：${summary.keepLocalCount} 个"
 
     private fun formatBytes(bytes: Long): String = when {
