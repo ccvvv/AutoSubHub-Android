@@ -68,10 +68,6 @@ class JGitCandidateHistoryReader(
                 val branchTipId = git.repository.resolve("$remoteRef^{commit}")
                     ?: throw IllegalStateException("Configured data branch was not fetched: ${config.dataBranch}")
                 val commits = collectCandidateCommits(git, branchTipId)
-                require(commits.isNotEmpty()) {
-                    "No add/modify history found for candidate/subscription.yaml"
-                }
-
                 val enoughHistory = if (requiredCursors.isEmpty()) {
                     commits.size >= bootstrapLimit
                 } else {
@@ -79,6 +75,9 @@ class JGitCandidateHistoryReader(
                 }
                 val historyIsComplete = git.repository.objectDatabase.shallowCommits.isEmpty()
                 if (enoughHistory || historyIsComplete) {
+                    require(commits.isNotEmpty()) {
+                        "No add/modify history found for candidate/subscription.yaml"
+                    }
                     return History(commitsNewestFirst = commits, branchTip = branchTipId.name)
                 }
                 if (depth >= MAX_HISTORY_DEPTH) {
