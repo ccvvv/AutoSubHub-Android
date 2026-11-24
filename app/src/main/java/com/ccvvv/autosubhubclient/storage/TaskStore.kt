@@ -112,6 +112,10 @@ class TaskStore(context: Context) : SQLiteOpenHelper(
         try {
             val current = getTaskState(taskId)
                 ?: throw IllegalArgumentException("Unknown task: $taskId")
+            require(next != TaskState.PUBLISHED_CONFIRMED &&
+                next != TaskState.CLEANUP_ELIGIBLE && next != TaskState.CLEANED) {
+                "This transition requires a dedicated proof-checked storage operation"
+            }
             TaskTransitions.requireTransition(current, next)
             val values = ContentValues().apply {
                 put("state", next.name)
@@ -132,7 +136,10 @@ class TaskStore(context: Context) : SQLiteOpenHelper(
         sha256: String? = null
     ) {
         require(artifactId.isNotBlank())
-        require(relativePath.isNotBlank() && !relativePath.startsWith("/"))
+        require(relativePath.startsWith("tasks/$taskId/")) {
+            "Artifact must be stored inside its task-specific workspace directory"
+        }
+        require(!relativePath.startsWith("/"))
         require(!relativePath.split('/').contains(".."))
         require(byteCount >= 0)
         require(sha256 == null || sha256.matches(Regex("(?i)^[a-f0-9]{64}$")))
