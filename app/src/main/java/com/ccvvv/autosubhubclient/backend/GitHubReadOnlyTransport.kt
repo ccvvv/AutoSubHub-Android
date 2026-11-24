@@ -25,14 +25,6 @@ class GitHubReadOnlyTransport(
         require(readTimeoutMs in 1..180_000)
     }
 
-    data class CandidateSnapshot(
-        val commit: String,
-        val candidateFile: File,
-        val manifestFile: File,
-        val candidateSha256: String,
-        val proxyCount: Int
-    )
-
     data class LatestReceipt(
         val receiptId: String?,
         val candidateCommit: String?,
@@ -41,66 +33,12 @@ class GitHubReadOnlyTransport(
         val receiptCommit: String?
     )
 
-    data class PendingQueue(
-        val candidateFile: File,
-        val manifestFile: File,
-        val metadataFile: File,
-        val candidateCommit: String,
-        val candidateCommits: List<String>,
-        val candidateSha256: String,
-        val proxyCount: Int
-    )
-
-    /** Downloads an immutable candidate snapshot and verifies its SHA256 against manifest.json. */
-    fun fetchCandidateSnapshot(commit: String, workspace: File): CandidateSnapshot {
-        require(commit.matches(Regex("(?i)^[a-f0-9]{40}$"))) { "Invalid candidate commit" }
-        require(workspace.exists() || workspace.mkdirs()) { "Cannot create candidate workspace" }
-        require(workspace.isDirectory) { "Candidate workspace is not a directory" }
-
-        val candidateBytes = request(
-            GitHubBackendEndpoints.rawSnapshotFile(config, commit, "candidate/subscription.yaml"),
-            GITHUB_RAW
-        )
-        val manifestBytes = request(
-            GitHubBackendEndpoints.rawSnapshotFile(config, commit, "candidate/manifest.json"),
-            GITHUB_RAW
-        )
-        val manifest = JSONObject(String(manifestBytes, Charsets.UTF_8))
-        val expectedHash = manifest.optString("candidate_sha256", "").lowercase()
-        val actualHash = sha256(candidateBytes)
-        require(expectedHash.matches(Regex("^[a-f0-9]{64}$")) && expectedHash == actualHash) {
-            "Candidate SHA256 does not match the immutable manifest at $commit"
-        }
-        val nodes = manifest.optJSONArray("nodes")
-            ?: throw IllegalArgumentException("Candidate manifest is missing nodes")
-        val names = HashSet<String>()
-        val ids = HashSet<String>()
-        for (index in 0 until nodes.length()) {
-            val node = nodes.getJSONObject(index)
-            val name = node.optString("name", "")
-            val id = node.optString("node_id", "")
-            require(name.isNotBlank() && id.matches(Regex("(?i)^[a-f0-9]{64}$"))) {
-                "Candidate manifest contains an invalid node entry"
-            }
-            require(names.add(name) && ids.add(id)) {
-                "Candidate manifest contains duplicate names or node IDs"
-            }
-        }
-
-        val batchDir = File(workspace, commit)
-        require(batchDir.exists() || batchDir.mkdirs()) { "Cannot create snapshot directory" }
-        val candidateFile = File(batchDir, "subscription.yaml")
-        val manifestFile = File(batchDir, "manifest.json")
-        atomicWrite(candidateFile, candidateBytes)
-        atomicWrite(manifestFile, manifestBytes)
-        return CandidateSnapshot(commit, candidateFile, manifestFile, actualHash, nodes.length())
-    }
 
     /**
      * Downloads the cloud-prepared cumulative pending queue. The phone does not enumerate
      * candidate history or merge snapshots; it only verifies and stores the cloud output.
      */
-    fun fetchPendingQueue(workspace: File): PendingQueue {
+    fun fetchPendingQueue(workspace: File): PendingQueueBundle {
         require(workspace.exists() || workspace.mkdirs()) { "Cannot create pending queue workspace" }
         require(workspace.isDirectory) { "Pending queue workspace is not a directory" }
 
@@ -164,7 +102,7 @@ class GitHubReadOnlyTransport(
         atomicWrite(candidateFile, candidateBytes)
         atomicWrite(manifestFile, manifestBytes)
         atomicWrite(metadataFile, metadataBytes)
-        return PendingQueue(candidateFile, manifestFile, metadataFile, candidateCommit, commits, actualHash, nodes.length())
+        return PendingQueueBundle(candidateCommit, commits, candidateFile, manifestFile, metadataFile, actualHash, nodes.length())
     }
 
     /** Reads the current receipt via the Contents API, so slash-containing branch names remain safe. */
