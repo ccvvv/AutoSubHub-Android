@@ -7,7 +7,7 @@ import org.junit.Test
 class TaskTransitionsTest {
     @Test
     fun completedProbeIsNotEnoughToDeleteArtifacts() {
-        val artifact = LocalArtifact("batch-1", "receipts/receipt.json", 100)
+        val artifact = LocalArtifact("batch-1", "receipts/receipt.json", 100, sha256 = null)
         assertFalse(artifact.isCleanupEligible(TaskState.PROBE_COMPLETED_LOCAL, null))
         assertFalse(artifact.isCleanupEligible(TaskState.UPLOADING, null))
     }
@@ -29,7 +29,7 @@ class TaskTransitionsTest {
     @Test
     fun keepLocalCopyOverridesCleanupEligibility() {
         val proof = RemotePublicationProof("backend", "receipt", "b".repeat(64), "rev", 1L, true)
-        val artifact = LocalArtifact("batch-1", "receipts/receipt.json", 100, keepLocalCopy = true)
+        val artifact = LocalArtifact("batch-1", "receipts/receipt.json", 100, sha256 = null, keepLocalCopy = true)
         assertFalse(artifact.isCleanupEligible(TaskState.CLEANUP_ELIGIBLE, proof))
     }
 
@@ -41,6 +41,6 @@ class TaskTransitionsTest {
 
     @Test(expected = IllegalArgumentException::class)
     fun rejectsWorkspaceTraversalPath() {
-        LocalArtifact("batch-1", "receipts/../../private-key", 1)
+        LocalArtifact("batch-1", "receipts/../../private-key", 1, sha256 = null)
     }
 }
