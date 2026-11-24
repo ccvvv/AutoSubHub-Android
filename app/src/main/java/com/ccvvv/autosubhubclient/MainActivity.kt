@@ -9,6 +9,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import java.io.File
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import com.ccvvv.autosubhubclient.storage.LocalArtifactCleaner
