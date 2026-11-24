@@ -13,9 +13,9 @@ Standalone native Android client for AutoSubHub-compatible backends.
 
 ## Current status
 
-The client now includes a SQLite task/artifact journal, remote-proof-gated local cleanup, a versioned backend port, candidate-history cursor planning, and a bounded direct process runner. The home screen exposes storage and Android runtime diagnostics.
+The client now includes a SQLite task/artifact journal, remote-proof-gated local cleanup, a versioned backend port, a bounded direct process runner, GitHub connection checks, and download/verification of the cloud-prepared pending queue. Candidate history enumeration, snapshot merging and fingerprint deduplication are cloud responsibilities; the Android app only downloads the finished queue and runs the phone-side probe.
 
-Embedded Python, Git, SSH and Mihomo are intentionally not bundled yet. The backend transport adapter is not connected, so no live candidate download or receipt upload occurs. Android executable loading and writable-directory restrictions must be validated on a real device before selecting the runtime packaging strategy.
+The cloud workflow publishes `candidate/pending.yaml`, `candidate/pending-manifest.json` and `candidate/pending-meta.json` on the data branch. Receipt upload, end-to-end remote verification, SSH key management, and the bundled Python/SSH/Mihomo runtime are still being implemented. Android executable loading and writable-directory restrictions must be validated on a real device before selecting the final runtime packaging strategy.
 
 ## Build
 
@@ -37,7 +37,7 @@ Modules will be introduced incrementally; the initial build keeps a single app m
 - CI runs Kotlin unit tests before assembling the debug APK.
 - Storage cleanup tests must prove that local probe completion or a Git push exit code alone cannot authorize deletion.
 - The Android ELF execution gate is documented in [runtime execution validation](docs/runtime-execution.md); it is not yet passed.
-- The backend port is defined, but the GitHub transport adapter and end-to-end workflow are still pending.
+- The GitHub read transport now verifies and downloads the cloud-prepared queue; receipt upload and full end-to-end verification remain pending.
 
 ## Security
 
