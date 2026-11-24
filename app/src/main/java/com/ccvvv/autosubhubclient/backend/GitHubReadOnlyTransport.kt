@@ -44,10 +44,11 @@ class GitHubReadOnlyTransport(
 
         fun readContents(path: String): ByteArray {
             val url = GitHubBackendEndpoints.contentsFile(config, path, config.dataBranch)
-            val json = JSONObject(String(request(url, GITHUB_JSON), Charsets.UTF_8))
-            val encoded = json.optString("content", "").replace("\n", "").replace("\r", "").trim()
-            require(encoded.isNotEmpty()) { "Cloud queue file is empty: $path" }
-            return java.util.Base64.getMimeDecoder().decode(encoded)
+            // The raw media type avoids the Contents API's base64/JSON size overhead and
+            // supports larger candidate YAML files. The ref remains a query parameter.
+            return request(url, GITHUB_RAW).also {
+                require(it.isNotEmpty()) { "Cloud queue file is empty: $path" }
+            }
         }
 
         val candidateBytes = readContents("candidate/pending.yaml")
