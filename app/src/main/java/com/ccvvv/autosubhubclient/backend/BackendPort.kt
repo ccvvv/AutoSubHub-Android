@@ -80,7 +80,7 @@ data class ReceiptBundle(
         require(coveredCandidateCount == expectedCandidateCount) {
             "Receipt bundle does not cover every candidate"
         }
-        require(sidecarFiles.isNotEmpty()) { "Receipt sidecars are required" }
+        require(sidecarFiles.size >= 2) { "Candidate and manifest sidecars are required" }
     }
 }
 
@@ -117,3 +117,14 @@ interface BackendPort {
     fun verifyPublishedReceipt(receiptId: String, contentSha256: String): RemotePublicationProof?
     fun readPublishedStatus(): BackendPublishedStatus
 }
+
+/** Prevent a valid proof from another backend or another receipt being reused. */
+fun RemotePublicationProof.matches(
+    config: BackendConfig,
+    expectedReceiptId: String,
+    expectedContentSha256: String
+): Boolean =
+    isValid() &&
+        backendIdentity == config.identity &&
+        receiptId == expectedReceiptId &&
+        contentSha256.equals(expectedContentSha256, ignoreCase = true)
