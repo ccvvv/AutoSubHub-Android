@@ -83,7 +83,8 @@ class TaskStore(context: Context) : SQLiteOpenHelper(
     }
 
     fun createTask(taskId: String, now: Long = System.currentTimeMillis()) {
-        require(taskId.isNotBlank())
+        require(taskId.matches(Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")))
+        require(taskId != "." && taskId != "..")
         val values = ContentValues().apply {
             put("task_id", taskId)
             put("state", TaskState.QUEUED.name)
@@ -194,6 +195,10 @@ class TaskStore(context: Context) : SQLiteOpenHelper(
             val proof = readProof(db, taskId)
                 ?: throw IllegalStateException("No verified remote publication proof")
             require(proof.isValid()) { "Stored remote proof is invalid" }
+            val artifactCount = db.rawQuery(
+                "SELECT COUNT(*) FROM artifacts WHERE task_id = ?", arrayOf(taskId)
+            ).use { cursor -> cursor.moveToFirst(); cursor.getInt(0) }
+            require(artifactCount > 0) { "No registered artifacts for task" }
             val state = getTaskState(taskId)
                 ?: throw IllegalArgumentException("Unknown task: $taskId")
             TaskTransitions.requireTransition(state, TaskState.CLEANUP_ELIGIBLE)
@@ -213,12 +218,24 @@ class TaskStore(context: Context) : SQLiteOpenHelper(
     }
 
     fun setKeepLocalCopy(artifactId: String, keep: Boolean) {
-        val values = ContentValues().apply {
-            put("keep_local_copy", if (keep) 1 else 0)
-            if (keep) put("cleanup_eligible", 0)
-        }
-        check(writableDatabase.update("artifacts", values, "artifact_id = ?", arrayOf(artifactId)) == 1) {
-            "Unknown artifact: $artifactId"
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val taskId = db.query(
+                "artifacts", arrayOf("task_id"), "artifact_id = ?",
+                arrayOf(artifactId), null, null, null
+            ).use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            } ?: throw IllegalArgumentException("Unknown artifact: $artifactId")
+            val values = ContentValues().apply {
+                put("keep_local_copy", if (keep) 1 else 0)
+                if (keep) put("cleanup_eligible", 0)
+                else if (getTaskState(taskId) == TaskState.CLEANUP_ELIGIBLE) put("cleanup_eligible", 1)
+            }
+            check(db.update("artifacts", values, "artifact_id = ?", arrayOf(artifactId)) == 1)
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
         }
     }
 
