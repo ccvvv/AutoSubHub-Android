@@ -11,6 +11,7 @@ import android.widget.TextView
 import android.widget.Toast
 import com.ccvvv.autosubhubclient.storage.LocalArtifactCleaner
 import com.ccvvv.autosubhubclient.storage.TaskStore
+import com.ccvvv.autosubhubclient.runtime.RuntimeEnvironment
 
 class MainActivity : Activity() {
     private val taskStore by lazy { TaskStore(applicationContext) }
@@ -80,7 +81,7 @@ class MainActivity : Activity() {
         }
         root.addView(saveButton)
 
-        addSection(root, "运行环境", "尚未安装 · 当前版本不包含可执行运行时")
+        addSection(root, "运行环境", RuntimeEnvironment.inspect(this).summary() + "\\n运行工具尚未内置；ELF 执行能力尚未在真机验证")
         addSection(root, "SSH 密钥", "尚未生成 · 后续加入本地密钥生成与公钥展示")
         addSection(root, "任务状态", "空闲 · 后续接入持久化后台任务")
         addSection(root, "测速并发", "目标上限 300 · 必须通过真机压力测试后启用")
