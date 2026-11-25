@@ -1,6 +1,11 @@
 package com.ccvvv.autosubhubclient
 
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.graphics.Typeface
+import android.widget.ScrollView
 import android.os.Bundle
 import android.view.Gravity
 import android.view.ViewGroup
@@ -187,21 +192,62 @@ class MainActivity : Activity() {
             text = "Mihomo 核心尚未验证"
         }
         root.addView(mihomoStatus)
+
+        val mihomoLog = TextView(this).apply {
+            textSize = 12f
+            typeface = Typeface.MONOSPACE
+            setTextIsSelectable(true)
+            setPadding(padding / 2, padding / 2, padding / 2, padding / 2)
+            text = "运行日志：等待操作"
+        }
+        val mihomoLogScroll = ScrollView(this).apply {
+            isFillViewport = true
+            addView(mihomoLog)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                (180 * resources.displayMetrics.density).toInt()
+            )
+        }
+        root.addView(mihomoLogScroll)
+        fun appendMihomoLog(message: String) {
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    val existing = mihomoLog.text.toString()
+                    mihomoLog.text = (if (existing == "运行日志：等待操作") "" else "$existing\n") +
+                        "[${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())}] $message"
+                    mihomoLogScroll.post { mihomoLogScroll.fullScroll(ViewGroup.FOCUS_DOWN) }
+                }
+            }
+        }
+        root.addView(Button(this).apply {
+            text = "复制运行日志"
+            setOnClickListener {
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("Mihomo 运行日志", mihomoLog.text))
+                Toast.makeText(this@MainActivity, "日志已复制", Toast.LENGTH_SHORT).show()
+            }
+        })
+
         val mihomoTestButton = Button(this).apply {
             text = "下载并验证 Mihomo 核心"
             setOnClickListener {
                 isEnabled = false
-                mihomoStatus.text = "正在下载、校验并启动 Mihomo（后台执行）…"
+                mihomoStatus.text = "正在验证 Mihomo 核心…"
+                appendMihomoLog("开始核心安装/版本验证")
                 ioExecutor.execute {
                     try {
+                        appendMihomoLog("检查核心文件；必要时下载官方 ARM64 核心并校验 SHA-256")
                         val result = MihomoCoreManager(applicationContext).startVersionCheck()
+                        appendMihomoLog("版本检查输出：$result")
                         runOnUiThread {
                             if (!isFinishing && !isDestroyed) {
-                                mihomoStatus.text = "核心验证成功：\\n$result"
+                                mihomoStatus.text = "核心验证成功：$result"
                                 isEnabled = true
                             }
                         }
                     } catch (error: Exception) {
+                        val detail = android.util.Log.getStackTraceString(error)
+                        appendMihomoLog("核心验证失败：$detail")
                         runOnUiThread {
                             if (!isFinishing && !isDestroyed) {
                                 mihomoStatus.text = "核心验证失败：${error.message ?: error.javaClass.simpleName}"
@@ -217,10 +263,13 @@ class MainActivity : Activity() {
             text = "测试核心加载配置并启动/停止"
             setOnClickListener {
                 isEnabled = false
-                mihomoStatus.text = "正在校验最小配置并测试启动（后台执行）…"
+                mihomoStatus.text = "正在校验最小配置并测试启动…"
+                appendMihomoLog("开始最小配置校验与核心启动测试")
                 ioExecutor.execute {
                     try {
+                        appendMihomoLog("生成本地 smoke-test.yaml，校验配置")
                         val result = MihomoCoreManager(applicationContext).testMinimalConfig()
+                        appendMihomoLog("测试结果：$result")
                         runOnUiThread {
                             if (!isFinishing && !isDestroyed) {
                                 mihomoStatus.text = "核心启动测试通过：$result"
@@ -228,6 +277,8 @@ class MainActivity : Activity() {
                             }
                         }
                     } catch (error: Exception) {
+                        val detail = android.util.Log.getStackTraceString(error)
+                        appendMihomoLog("核心启动测试失败：$detail")
                         runOnUiThread {
                             if (!isFinishing && !isDestroyed) {
                                 mihomoStatus.text = "核心启动测试失败：${error.message ?: error.javaClass.simpleName}"
