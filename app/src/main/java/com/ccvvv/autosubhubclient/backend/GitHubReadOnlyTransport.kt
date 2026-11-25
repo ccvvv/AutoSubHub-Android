@@ -89,18 +89,15 @@ class GitHubReadOnlyTransport(
         require(expectedHash.matches(Regex("^[a-f0-9]{64}$")) && expectedHash == actualHash) {
             "Candidate subscription SHA256 does not match its manifest"
         }
-        val nodesArrayText = Regex("""\"nodes\"\s*:\s*\[(.*?)\]""", RegexOption.DOT_MATCHES_ALL)
-            .find(manifestText)?.groupValues?.getOrNull(1)
+        val nodeArray = manifest.optJSONArray("nodes")
             ?: throw IllegalArgumentException("Candidate manifest is missing nodes")
-        val nodeObjects = Regex("""\{([^{}]*)\}""")
-            .findAll(nodesArrayText).map { it.groupValues[1] }.toList()
         val names = HashSet<String>()
         val ids = HashSet<String>()
-        for (nodeText in nodeObjects) {
-            val name = Regex("""\"name\"\s*:\s*\"([^\"]*)\"""")
-                .find(nodeText)?.groupValues?.getOrNull(1).orEmpty()
-            val id = Regex("""\"node_id\"\s*:\s*\"([a-fA-F0-9]{20})\"""")
-                .find(nodeText)?.groupValues?.getOrNull(1).orEmpty()
+        for (index in 0 until nodeArray.length()) {
+            val node = nodeArray.optJSONObject(index)
+                ?: throw IllegalArgumentException("Candidate manifest contains an invalid node entry")
+            val name = node.optString("name", "").trim()
+            val id = node.optString("node_id", "").trim()
             require(name.isNotBlank() && id.matches(Regex("(?i)^[a-f0-9]{20}$"))) {
                 "Candidate manifest contains an invalid node identity"
             }
@@ -108,8 +105,8 @@ class GitHubReadOnlyTransport(
                 "Candidate manifest contains duplicate node names or IDs"
             }
         }
-        require(candidateCount > 0 && candidateCount == nodeObjects.size) {
-            "Candidate YAML proxy count ($candidateCount) does not match manifest node count (${nodeObjects.size})"
+        require(candidateCount > 0 && candidateCount == nodeArray.length()) {
+            "Candidate YAML proxy count ($candidateCount) does not match manifest node count (${nodeArray.length()})"
         }
 
         val target = File(workspace, "candidate-$actualHash")
