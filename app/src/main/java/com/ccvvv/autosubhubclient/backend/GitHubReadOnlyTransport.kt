@@ -82,7 +82,9 @@ class GitHubReadOnlyTransport(
         require(schemaVersion == 1) {
             "Unsupported candidate manifest schema (token=$schemaToken)"
         }
-        val expectedHash = manifest.opt("candidate_sha256")?.toString()?.lowercase().orEmpty()
+        val hashToken = Regex("""\"candidate_sha256\"\s*:\s*\"([a-fA-F0-9]{64})\"""")
+            .find(manifestText)?.groupValues?.getOrNull(1)
+        val expectedHash = hashToken?.lowercase().orEmpty()
         val actualHash = sha256(candidateBytes)
         require(expectedHash.matches(Regex("^[a-f0-9]{64}$")) && expectedHash == actualHash) {
             "Candidate subscription SHA256 does not match its manifest"
