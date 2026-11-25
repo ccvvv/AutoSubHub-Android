@@ -89,14 +89,18 @@ class GitHubReadOnlyTransport(
         require(expectedHash.matches(Regex("^[a-f0-9]{64}$")) && expectedHash == actualHash) {
             "Candidate subscription SHA256 does not match its manifest"
         }
-        val nodes = manifest.optJSONArray("nodes")
+        val nodesArrayText = Regex("""\\"nodes\\"\\s*:\\s*\\[(.*?)\\]""", RegexOption.DOT_MATCHES_ALL)
+            .find(manifestText)?.groupValues?.getOrNull(1)
             ?: throw IllegalArgumentException("Candidate manifest is missing nodes")
+        val nodeObjects = Regex("""\\{([^{}]*)\\}""")
+            .findAll(nodesArrayText).map { it.groupValues[1] }.toList()
         val names = HashSet<String>()
         val ids = HashSet<String>()
-        for (index in 0 until nodes.length()) {
-            val node = nodes.getJSONObject(index)
-            val name = node.optString("name", "")
-            val id = node.optString("node_id", "")
+        for (nodeText in nodeObjects) {
+            val name = Regex("""\\"name\\"\\s*:\\s*\\"([^\\"]*)\\"""")
+                .find(nodeText)?.groupValues?.getOrNull(1).orEmpty()
+            val id = Regex("""\\"node_id\\"\\s*:\\s*\\"([a-fA-F0-9]{20})\\"""")
+                .find(nodeText)?.groupValues?.getOrNull(1).orEmpty()
             require(name.isNotBlank() && id.matches(Regex("(?i)^[a-f0-9]{20}$"))) {
                 "Candidate manifest contains an invalid node identity"
             }
@@ -104,8 +108,9 @@ class GitHubReadOnlyTransport(
                 "Candidate manifest contains duplicate node names or IDs"
             }
         }
-        require(candidateCount == nodes.length() &&
-            manifest.optInt("unique_candidates", -1) == nodes.length()) {
+        val uniqueToken = Regex("""\\"unique_candidates\\"\\s*:\\s*([0-9]+)""")
+            .find(manifestText)?.groupValues?.getOrNull(1)?.toIntOrNull()
+        require(candidateCount == nodeObjects.size && uniqueToken == nodeObjects.size) {
             "Candidate YAML and manifest node counts do not match"
         }
 
