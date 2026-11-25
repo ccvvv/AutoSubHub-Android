@@ -340,7 +340,7 @@ class MainActivity : Activity() {
         val concurrencyInput = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_NUMBER
             setSingleLine(true)
-            hint = "默认 50"
+            hint = "默认 200"
             setText(preferences.getInt(KEY_PROBE_CONCURRENCY, DEFAULT_PROBE_CONCURRENCY).toString())
         }
         root.addView(concurrencyInput)
@@ -450,7 +450,7 @@ class MainActivity : Activity() {
     companion object {
         private const val KEY_BACKEND_URL = "backend_url"
         private const val KEY_PROBE_CONCURRENCY = "probe_concurrency"
-        private const val DEFAULT_PROBE_CONCURRENCY = 50
+        private const val DEFAULT_PROBE_CONCURRENCY = 200
         private const val MIN_PROBE_CONCURRENCY = 1
         private const val MAX_PROBE_CONCURRENCY = 300
     }
