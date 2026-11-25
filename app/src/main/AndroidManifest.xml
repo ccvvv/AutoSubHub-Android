@@ -5,6 +5,7 @@
         android:allowBackup="false"
         android:label="AutoSubHub NewApp"
         android:supportsRtl="true"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity
             android:name=".MainActivity"
