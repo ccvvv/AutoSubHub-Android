@@ -10,6 +10,7 @@ import java.net.InetSocketAddress
 import java.net.Proxy
 import java.net.ServerSocket
 import java.net.URL
+import android.util.Log
 import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.Callable
@@ -93,9 +94,13 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
                         val row = JSONObject().put("node_id", ids[name]).put("name", name)
                             .put("status", "failed").put("download_speed_bps", 0)
                         var stage = "mihomo_select"
+                        val stageTimes = JSONObject()
                         try {
+                            var stageStart = System.nanoTime()
                             select(api, secret, selector, name)
+                            stageTimes.put("mihomo_select_ms", TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - stageStart))
                             stage = "application_checks"
+                            stageStart = System.nanoTime()
                             val appTargets = linkedMapOf(
                                 "youtube" to "https://www.youtube.com/",
                                 "telegram" to "https://web.telegram.org/",
@@ -105,6 +110,7 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
                             )
                             val apps = JSONObject()
                             appTargets.forEach { (key, url) -> apps.put(key, checkApp(key, url, proxy)) }
+                            stageTimes.put("application_checks_ms", TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - stageStart))
                             val appPassed = appTargets.keys.filter { apps.optJSONObject(it)?.optString("status") == "passed" }
                             row.put("application_checks", apps).put("application_gate",
                                 JSONObject().put("required_passes", 5).put("passed_count", appPassed.size)
@@ -112,6 +118,7 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
                                     .put("status", if (appPassed.size == 5) "passed" else "failed"))
 
                             stage = "streaming_checks"
+                            stageStart = System.nanoTime()
                             val targets = linkedMapOf(
                                 "netflix" to "https://www.netflix.com/title/80018499",
                                 "youtube_premium" to "https://www.youtube.com/premium",
@@ -128,6 +135,7 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
                                         .put("detail", e.javaClass.simpleName + ": " + (e.message ?: "").take(160))
                                 })
                             }
+                            stageTimes.put("streaming_checks_ms", TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - stageStart))
                             val yes = targets.keys.count { streams.optJSONObject(it)?.optString("status") == "yes" }
                             val streamVerdict = if (yes > 0) "passed" else "failed"
                             row.put("streaming_checks", streams).put("streaming_verdict", streamVerdict)
@@ -136,7 +144,9 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
                             else if (streamVerdict != "passed") row.put("failure_stage", "streaming_checks")
                             else {
                                 stage = "download"
+                                stageStart = System.nanoTime()
                                 val (bytes, seconds) = download(proxy)
+                                stageTimes.put("download_total_ms", TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - stageStart))
                                 val speed = (bytes / seconds).toLong()
                                 val category = if (speed >= 500000) "high" else if (speed >= 200000) "normal" else "rejected"
                                 row.put("downloaded_bytes", bytes).put("expected_download_bytes", 5242880)
@@ -148,6 +158,8 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
                             row.put("error", e.javaClass.simpleName).put("message", (e.message ?: "").take(500))
                                 .put("failure_stage", stage)
                         }
+                        row.put("stage_timings_ms", stageTimes)
+                        Log.i("AutoSubHubProbe", "node=" + name + " stage=" + stage + " timings=" + stageTimes + " result=" + row.optString("status"))
                         synchronized(results) {
                             results.add(row)
                             onProgress("测速进度：" + results.size + "/" + names.size + "，当前节点：" + name)
@@ -239,13 +251,16 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
         try {
             c.requestMethod = method; c.connectTimeout = 8000; c.readTimeout = 8000
             c.setRequestProperty("Authorization", "Bearer $secret")
+            c.setRequestProperty("Connection", "keep-alive")
             if (body != null) { c.doOutput = true; c.setRequestProperty("Content-Type", "application/json"); c.outputStream.use { it.write(body) } }
             val code = c.responseCode
             val stream = if (code in 200..299) c.inputStream else c.errorStream
             val bytes = stream?.use { bounded(it, 65536) } ?: ByteArray(0)
             check(code in 200..299) { "Mihomo API HTTP $code: " + String(bytes, Charsets.UTF_8).take(300) }
             return bytes
-        } finally { c.disconnect() }
+        } finally {
+            // Response body is consumed; allow HttpURLConnection keep-alive pooling.
+        }
     }
 
     private fun checkApp(name: String, target: String, proxy: Proxy): JSONObject {
