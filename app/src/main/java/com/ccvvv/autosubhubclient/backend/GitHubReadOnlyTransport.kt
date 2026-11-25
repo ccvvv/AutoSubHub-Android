@@ -45,16 +45,16 @@ class GitHubReadOnlyTransport(
     fun fetchCandidateSubscription(workspace: File): CandidateSubscriptionBundle {
         require(workspace.exists() || workspace.mkdirs()) { "Cannot create candidate workspace" }
         require(workspace.isDirectory) { "Candidate workspace is not a directory" }
-        val branch = JSONObject(
-            String(request(GitHubBackendEndpoints.branch(config), GITHUB_JSON), Charsets.UTF_8)
-        )
-        // GitHub's branch endpoint returns the commit object at the top level under "commit".
-        // Use required accessors so malformed or unexpected payloads fail with a precise cause.
-        val candidateCommit = runCatching {
-            branch.getJSONObject("commit").getString("sha").trim()
-        }.getOrElse {
-            throw IllegalArgumentException("GitHub branch response is missing commit.sha", it)
-        }
+        val branchBytes = request(GitHubBackendEndpoints.branch(config), GITHUB_JSON)
+        val branchJson = String(branchBytes, Charsets.UTF_8)
+        val branch = JSONObject(branchJson)
+        // Prefer structured JSON parsing. The strict fallback handles Android local-test
+        // JSON implementations that may return null for a nested JSONObject value.
+        val candidateCommit = branch.optJSONObject("commit")?.optString("sha", "")
+            ?.trim()?.takeIf { it.isNotBlank() }
+            ?: Regex(""""commit"\\s*:\\s*\\{[^}]*"sha"\\s*:\\s*"([a-fA-F0-9]{40})"""")
+                .find(branchJson)?.groupValues?.getOrNull(1)
+                ?: throw IllegalArgumentException("GitHub branch response is missing commit.sha")
         require(candidateCommit.matches(Regex("(?i)^[a-f0-9]{40}$"))) {
             "GitHub returned an invalid data-branch head commit"
         }
