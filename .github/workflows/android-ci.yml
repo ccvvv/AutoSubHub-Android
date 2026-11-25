@@ -2,7 +2,7 @@ name: Android CI
 
 on:
   push:
-    branches: [main, test-api-keepalive-from-220]
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
