@@ -38,23 +38,19 @@ class GitHubReadOnlyTransport(
 
 
     /**
-     * Downloads one immutable original candidate snapshot and its manifest.
-     * The commit is resolved first so both files come from exactly the same revision.
+     * Downloads the one current candidate pool and its manifest.
+     * Resolve the data branch head once, then pin both file reads to that same SHA.
+     * No candidate-file history is needed: the pool contains only the current test batch.
      */
     fun fetchCandidateSubscription(workspace: File): CandidateSubscriptionBundle {
         require(workspace.exists() || workspace.mkdirs()) { "Cannot create candidate workspace" }
         require(workspace.isDirectory) { "Candidate workspace is not a directory" }
-        request(GitHubBackendEndpoints.branch(config), GITHUB_JSON)
-
-        val (owner, repository) = config.ownerAndRepository
-        val historyUrl = "https://api.github.com/repos/$owner/$repository/commits" +
-            "?sha=${encodeQuery(config.dataBranch)}" +
-            "&path=${encodeQuery("candidate/subscription.yaml")}&per_page=1&page=1"
-        val history = JSONArray(String(request(historyUrl, GITHUB_JSON), Charsets.UTF_8))
-        require(history.length() > 0) { "No candidate subscription commit was found" }
-        val candidateCommit = history.getJSONObject(0).optString("sha", "")
+        val branch = JSONObject(
+            String(request(GitHubBackendEndpoints.branch(config), GITHUB_JSON), Charsets.UTF_8)
+        )
+        val candidateCommit = branch.optJSONObject("commit")?.optString("sha", "").orEmpty()
         require(candidateCommit.matches(Regex("(?i)^[a-f0-9]{40}$"))) {
-            "GitHub returned an invalid candidate commit"
+            "GitHub returned an invalid data-branch head commit"
         }
 
         fun readSnapshot(path: String): ByteArray = request(
