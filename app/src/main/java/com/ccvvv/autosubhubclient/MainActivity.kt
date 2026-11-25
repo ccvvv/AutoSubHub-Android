@@ -17,6 +17,7 @@ import com.ccvvv.autosubhubclient.storage.LocalArtifactCleaner
 import com.ccvvv.autosubhubclient.storage.TaskStore
 import com.ccvvv.autosubhubclient.backend.BackendConfig
 import com.ccvvv.autosubhubclient.backend.GitHubReadOnlyTransport
+import com.ccvvv.autosubhubclient.runtime.MihomoCoreManager
 
 class MainActivity : Activity() {
     private val ioExecutor: ExecutorService = Executors.newFixedThreadPool(2)
@@ -179,6 +180,39 @@ class MainActivity : Activity() {
             }
         }
         root.addView(downloadQueueButton)
+
+        val mihomoStatus = TextView(this).apply {
+            textSize = 13f
+            setPadding(0, padding / 3, 0, padding / 3)
+            text = "Mihomo 核心尚未验证"
+        }
+        root.addView(mihomoStatus)
+        val mihomoTestButton = Button(this).apply {
+            text = "下载并验证 Mihomo 核心"
+            setOnClickListener {
+                isEnabled = false
+                mihomoStatus.text = "正在下载、校验并启动 Mihomo（后台执行）…"
+                ioExecutor.execute {
+                    try {
+                        val result = MihomoCoreManager(applicationContext).startVersionCheck()
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed) {
+                                mihomoStatus.text = "核心验证成功：\\n$result"
+                                isEnabled = true
+                            }
+                        }
+                    } catch (error: Exception) {
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed) {
+                                mihomoStatus.text = "核心验证失败：${error.message ?: error.javaClass.simpleName}"
+                                isEnabled = true
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        root.addView(mihomoTestButton)
         addSection(root, "SSH 密钥", "尚未生成 · 后续加入本地密钥生成与公钥展示")
         addSection(root, "任务状态", "空闲 · 后续接入持久化后台任务")
         val concurrencyLabel = TextView(this).apply {
