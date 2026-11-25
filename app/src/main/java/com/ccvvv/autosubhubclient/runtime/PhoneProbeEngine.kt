@@ -50,7 +50,6 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
         val log = File(dir, "probe-$task.log")
         config.writeText(makeConfig(String(candidateBytes, Charsets.UTF_8), names, workers, apiPort, basePort, secret))
         val pool = Executors.newFixedThreadPool(workers)
-        val streamPool = Executors.newFixedThreadPool(minOf(24, maxOf(4, workers)))
         val results = java.util.Collections.synchronizedList(mutableListOf<JSONObject>())
         var process: Process? = null
         try {
@@ -165,47 +164,48 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
                         .directory(dir).redirectErrorStream(true).redirectOutput(streamLog).start()
                     val streamApi = "http://127.0.0.1:$streamApiPort"
                     waitApi(streamApi, streamSecret, process!!)
-                    val streamJobs = streamNames.mapIndexed { index, name -> name to streamPool.submit(Callable {
-                        streamPool.submit(Callable {
-                            val worker = index % streamWorkers
-                            val proxy = Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", streamBasePort + worker))
-                            select(streamApi, streamSecret, "PHONE-%02d".format(worker), name)
-                            val targets = linkedMapOf(
-                                "netflix" to "https://www.netflix.com/title/80018499",
-                                "youtube_premium" to "https://www.youtube.com/premium",
-                                "disney_plus" to "https://www.disneyplus.com/",
-                                "bilibili" to "https://api.bilibili.com/x/web-interface/nav",
-                                "spotify" to "https://open.spotify.com/",
-                                "tiktok" to "https://www.tiktok.com/"
-                            )
-                            val streams = JSONObject()
-                            targets.forEach { (key, url) -> streams.put(key, checkStreaming(key, url, proxy)) }
-                            val yes = targets.keys.count { streams.optJSONObject(it)?.optString("status") == "yes" }
-                            synchronized(results) {
-                                val row = results.first { it.optString("name") == name }
-                                row.put("streaming_checks", streams).put("streaming_verdict", if (yes > 0) "passed" else "failed")
-                                    .put("streaming_gate", JSONObject().put("required_yes", 1).put("passed_count", yes).put("status", if (yes > 0) "passed" else "failed"))
-                                    .put("status", if (yes > 0) "passed" else "failed")
-                                if (yes == 0) row.put("failure_stage", "streaming_checks") else row.remove("failure_stage")
-                            }
-                            onProgress("流媒体进度：" + streamProgress.incrementAndGet() + "/" + streamNames.size + "，当前节点：" + name)
-                        }) }
-                    streamJobs.forEach { (name, future) ->
-                        try { future.get() } catch (e: Exception) {
-                            synchronized(results) {
-                                val row = results.first { it.optString("name") == name }
-                                row.put("streaming_checks", JSONObject().put("error", JSONObject()
-                                    .put("status", "error").put("confidence", "low")
-                                    .put("detail", e.javaClass.simpleName + ": " + (e.message ?: "").take(160))))
-                                    .put("streaming_verdict", "failed")
-                                    .put("streaming_gate", JSONObject().put("required_yes", 1).put("passed_count", 0).put("status", "failed"))
-                                    .put("status", "failed").put("failure_stage", "streaming_checks")
+                    streamNames.chunked(streamWorkers).forEach { batch ->
+                        val streamJobs = batch.mapIndexed { worker, name ->
+                            name to streamPool.submit(Callable {
+                                val proxy = Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", streamBasePort + worker))
+                                select(streamApi, streamSecret, "PHONE-%02d".format(worker), name)
+                                val targets = linkedMapOf(
+                                    "netflix" to "https://www.netflix.com/title/80018499",
+                                    "youtube_premium" to "https://www.youtube.com/premium",
+                                    "disney_plus" to "https://www.disneyplus.com/",
+                                    "bilibili" to "https://api.bilibili.com/x/web-interface/nav",
+                                    "spotify" to "https://open.spotify.com/",
+                                    "tiktok" to "https://www.tiktok.com/"
+                                )
+                                val streams = JSONObject()
+                                targets.forEach { (key, url) -> streams.put(key, checkStreaming(key, url, proxy)) }
+                                val yes = targets.keys.count { streams.optJSONObject(it)?.optString("status") == "yes" }
+                                synchronized(results) {
+                                    val row = results.first { it.optString("name") == name }
+                                    row.put("streaming_checks", streams).put("streaming_verdict", if (yes > 0) "passed" else "failed")
+                                        .put("streaming_gate", JSONObject().put("required_yes", 1).put("passed_count", yes).put("status", if (yes > 0) "passed" else "failed"))
+                                        .put("status", if (yes > 0) "passed" else "failed")
+                                    if (yes == 0) row.put("failure_stage", "streaming_checks") else row.remove("failure_stage")
+                                }
+                                onProgress("流媒体进度：" + streamProgress.incrementAndGet() + "/" + streamNames.size + "，当前节点：" + name)
+                            })
+                        }
+                        streamJobs.forEach { (name, future) ->
+                            try { future.get() } catch (e: Exception) {
+                                synchronized(results) {
+                                    val row = results.first { it.optString("name") == name }
+                                    row.put("streaming_checks", JSONObject().put("error", JSONObject()
+                                        .put("status", "error").put("confidence", "low")
+                                        .put("detail", e.javaClass.simpleName + ": " + (e.message ?: "").take(160))))
+                                        .put("streaming_verdict", "failed")
+                                        .put("streaming_gate", JSONObject().put("required_yes", 1).put("passed_count", 0).put("status", "failed"))
+                                        .put("status", "failed").put("failure_stage", "streaming_checks")
+                                }
                             }
                         }
                     }
                 } finally {
-                    streamPool.shutdownNow()
-                    process?.destroy()
+                            process?.destroy()
                     if (process?.isAlive == true) process?.destroyForcibly()
                     process = null
                     streamConfig.delete()
