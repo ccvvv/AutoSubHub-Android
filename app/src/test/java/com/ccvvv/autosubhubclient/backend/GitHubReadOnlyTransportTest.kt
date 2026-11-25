@@ -34,9 +34,8 @@ class GitHubReadOnlyTransportTest {
                             """{"commit": {"sha": "$commit"}}""".toByteArray()
                         }
                         else -> {
-                            assertTrue("Unexpected GitHub request URL: $url", url.contains("/contents/"))
+                            assertTrue("Unexpected raw snapshot URL: $url", url.startsWith("https://raw.githubusercontent.com/owner/repository/$commit/"))
                             assertEquals("application/vnd.github.raw+json", accept)
-                            assertTrue(url.contains("ref=$commit"))
                             if (url.contains("manifest.json")) manifest else YAML
                         }
                     }
@@ -74,7 +73,7 @@ class GitHubReadOnlyTransportTest {
                             """{"commit": {"sha": "$commit"}}""".toByteArray()
                         url.contains("manifest.json") -> manifest
                         else -> {
-                            assertTrue("Unexpected GitHub request URL: $url", url.contains("/contents/"))
+                            assertTrue("Unexpected raw snapshot URL: $url", url.startsWith("https://raw.githubusercontent.com/owner/repository/$commit/"))
                             YAML
                         }
                     }
