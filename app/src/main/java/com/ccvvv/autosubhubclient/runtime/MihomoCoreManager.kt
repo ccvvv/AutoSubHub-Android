@@ -46,6 +46,34 @@ class MihomoCoreManager(context: Context) {
         return executable
     }
 
+    /** Validate the downloaded candidate proxy list with a minimal complete Mihomo config. */
+    @Synchronized
+    fun validateCandidateSubscription(candidateFile: File): String {
+        require(candidateFile.isFile) { "找不到已下载的候选订阅文件" }
+        val candidateYaml = candidateFile.readText()
+        require(candidateYaml.lineSequence().any { it.trim() == "proxies:" }) {
+            "候选文件缺少 proxies 节点列表"
+        }
+        val config = File(coreDir, "candidate-smoke-test.yaml")
+        config.writeText(
+            candidateYaml.trimEnd() + "\n" + """
+                proxy-groups:
+                  - name: AutoSubHub-Validation
+                    type: select
+                    proxies:
+                      - DIRECT
+                rules:
+                  - MATCH,DIRECT
+            """.trimIndent() + "\n"
+        )
+        val binary = ensureInstalled()
+        val validation = linkerProcess(binary, "-d", coreDir.absolutePath, "-t", "-f", config.absolutePath)
+        val output = validation.inputStream.bufferedReader().use { it.readText() }
+        val exit = validation.waitFor()
+        check(exit == 0) { "候选配置校验失败（退出码 $exit）：$output" }
+        return "候选配置校验通过；文件 ${candidateFile.name}"
+    }
+
     @Synchronized
     fun startVersionCheck(): String {
         check(process == null) { "Mihomo 已在运行" }
