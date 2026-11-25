@@ -29,15 +29,16 @@ class GitHubReadOnlyTransportTest {
                 requestOverride = { url, accept ->
                     requests += url
                     when {
-                        url.contains("/branches/") -> {
+                        url.substringBefore("?").endsWith("/branches/published-subscriptions") -> {
                             assertEquals("application/vnd.github+json", accept)
                             "{}".toByteArray()
                         }
-                        url.contains("/commits?") -> {
+                        url.substringBefore("?").endsWith("/commits") -> {
                             assertEquals("application/vnd.github+json", accept)
                             """[{"sha":"$commit"}]""".toByteArray()
                         }
                         else -> {
+                            assertTrue("Unexpected GitHub request URL: $url", url.contains("/contents/"))
                             assertEquals("application/vnd.github.raw+json", accept)
                             assertTrue(url.contains("ref=$commit"))
                             if (url.contains("manifest.json")) manifest else YAML
@@ -73,10 +74,13 @@ class GitHubReadOnlyTransportTest {
                 config = config,
                 requestOverride = { url, _ ->
                     when {
-                        url.contains("/branches/") -> "{}".toByteArray()
-                        url.contains("/commits?") -> """[{"sha":"$commit"}]""".toByteArray()
+                        url.substringBefore("?").endsWith("/branches/published-subscriptions") -> "{}".toByteArray()
+                        url.substringBefore("?").endsWith("/commits") -> """[{"sha":"$commit"}]""".toByteArray()
                         url.contains("manifest.json") -> manifest
-                        else -> YAML
+                        else -> {
+                            assertTrue("Unexpected GitHub request URL: $url", url.contains("/contents/"))
+                            YAML
+                        }
                     }
                 }
             )
