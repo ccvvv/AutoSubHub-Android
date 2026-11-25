@@ -22,7 +22,7 @@ class GitHubReadOnlyTransportTest {
         val workspace = Files.createTempDirectory("candidate-subscription-test").toFile()
         try {
             val commit = "a".repeat(40)
-            val manifest = """{"schema_version":1,"candidate_sha256":"${sha256(YAML)}","unique_candidates":7,"nodes":[{"node_id":"${"b".repeat(20)}","name":"node-one"},{"node_id":"${"c".repeat(20)}","name":"node-two"}]}""".toByteArray()
+            val manifest = """{"schema_version":1,"candidate_sha256":"${sha256(YAML)}","unique_candidates":7,"nodes":[{"node_id":"${"b".repeat(20)}","name":"node-one","tags":["alpha","beta"]},{"node_id":"${"c".repeat(20)}","name":"node-two"}]}""".toByteArray()
             val requests = mutableListOf<String>()
             val transport = GitHubReadOnlyTransport(
                 config = config,
