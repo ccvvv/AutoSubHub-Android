@@ -413,7 +413,15 @@ class MainActivity : Activity() {
         }
         root.addView(footer)
 
-        setContentView(root)
+        val pageScroll = ScrollView(this).apply {
+            isFillViewport = true
+            clipToPadding = false
+            addView(root, ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+        }
+        setContentView(pageScroll)
     }
 
     override fun onDestroy() {
