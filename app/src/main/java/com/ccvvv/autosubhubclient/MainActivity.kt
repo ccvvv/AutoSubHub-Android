@@ -213,6 +213,32 @@ class MainActivity : Activity() {
             }
         }
         root.addView(mihomoTestButton)
+        val mihomoSmokeButton = Button(this).apply {
+            text = "测试核心加载配置并启动/停止"
+            setOnClickListener {
+                isEnabled = false
+                mihomoStatus.text = "正在校验最小配置并测试启动（后台执行）…"
+                ioExecutor.execute {
+                    try {
+                        val result = MihomoCoreManager(applicationContext).testMinimalConfig()
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed) {
+                                mihomoStatus.text = "核心启动测试通过：$result"
+                                isEnabled = true
+                            }
+                        }
+                    } catch (error: Exception) {
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed) {
+                                mihomoStatus.text = "核心启动测试失败：${error.message ?: error.javaClass.simpleName}"
+                                isEnabled = true
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        root.addView(mihomoSmokeButton)
         addSection(root, "SSH 密钥", "尚未生成 · 后续加入本地密钥生成与公钥展示")
         addSection(root, "任务状态", "空闲 · 后续接入持久化后台任务")
         val concurrencyLabel = TextView(this).apply {
