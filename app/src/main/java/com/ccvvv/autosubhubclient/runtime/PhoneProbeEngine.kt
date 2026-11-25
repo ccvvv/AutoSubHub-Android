@@ -165,7 +165,7 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
                         .directory(dir).redirectErrorStream(true).redirectOutput(streamLog).start()
                     val streamApi = "http://127.0.0.1:$streamApiPort"
                     waitApi(streamApi, streamSecret, process!!)
-                    val streamJobs = streamNames.mapIndexed { index, name ->
+                    val streamJobs = streamNames.mapIndexed { index, name -> name to streamPool.submit(Callable {
                         streamPool.submit(Callable {
                             val worker = index % streamWorkers
                             val proxy = Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", streamBasePort + worker))
@@ -189,9 +189,20 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
                                 if (yes == 0) row.put("failure_stage", "streaming_checks") else row.remove("failure_stage")
                             }
                             onProgress("流媒体进度：" + streamProgress.incrementAndGet() + "/" + streamNames.size + "，当前节点：" + name)
-                        })
+                        }) }
+                    streamJobs.forEach { (name, future) ->
+                        try { future.get() } catch (e: Exception) {
+                            synchronized(results) {
+                                val row = results.first { it.optString("name") == name }
+                                row.put("streaming_checks", JSONObject().put("error", JSONObject()
+                                    .put("status", "error").put("confidence", "low")
+                                    .put("detail", e.javaClass.simpleName + ": " + (e.message ?: "").take(160))))
+                                    .put("streaming_verdict", "failed")
+                                    .put("streaming_gate", JSONObject().put("required_yes", 1).put("passed_count", 0).put("status", "failed"))
+                                    .put("status", "failed").put("failure_stage", "streaming_checks")
+                            }
+                        }
                     }
-                    streamJobs.forEach { it.get() }
                 } finally {
                     streamPool.shutdownNow()
                     process?.destroy()
