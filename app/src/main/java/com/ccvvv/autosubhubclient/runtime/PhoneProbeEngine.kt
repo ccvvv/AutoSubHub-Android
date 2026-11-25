@@ -220,16 +220,18 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
 
     private fun checkApp(name: String, target: String, proxy: Proxy): JSONObject {
         val start = System.nanoTime()
+        var active: HttpURLConnection? = null
         return try {
             var url = URL(target); var redirects = 0
             var c: HttpURLConnection
             while (true) {
                 c = url.openConnection(proxy) as HttpURLConnection
+                active = c
                 c.instanceFollowRedirects = false; c.connectTimeout = 3000; c.readTimeout = 3000
                 c.setRequestProperty("User-Agent", "AutoSubHub-Android/0.1")
                 val code = c.responseCode
                 if (code in REDIRECTS && redirects < 8 && c.getHeaderField("Location") != null) {
-                    val next = URL(url, c.getHeaderField("Location")); c.disconnect(); url = next; redirects++
+                    val next = URL(url, c.getHeaderField("Location")); c.disconnect(); active = null; url = next; redirects++
                 } else break
             }
             val code = c.responseCode
@@ -248,10 +250,13 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
                 check(sample > 0) { "$name returned empty body" }
                 check(type.contains("text/html") || type.contains("application/xhtml+xml")) { "$name content type invalid: $type" }
             }
-            JSONObject().put("status", "passed").put("status_code", code).put("final_url", url.toString())
+            val result = JSONObject().put("status", "passed").put("status_code", code).put("final_url", url.toString())
                 .put("redirect_count", redirects).put("content_type", type).put("sample_bytes", sample)
                 .put("elapsed_ms", TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start))
+            active?.disconnect()
+            result
         } catch (e: Exception) {
+            active?.disconnect()
             JSONObject().put("status", "failed").put("error", e.javaClass.simpleName)
                 .put("message", (e.message ?: "").take(500))
                 .put("elapsed_ms", TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start))
@@ -259,8 +264,10 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
     }
 
     private fun checkStreaming(name: String, target: String, proxy: Proxy): JSONObject {
+        var active: HttpURLConnection? = null
         return try {
             val c = URL(target).openConnection(proxy) as HttpURLConnection
+            active = c
             c.instanceFollowRedirects = name != "disney_plus"; c.connectTimeout = 8000; c.readTimeout = 8000
             c.setRequestProperty("User-Agent", "AutoSubHub-Streaming-Check/1.0")
             if (name == "bilibili") c.setRequestProperty("Referer", "https://www.bilibili.com/")
@@ -271,8 +278,10 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
                 stream?.use { bounded(it, limit) } ?: ByteArray(0)
             } else ByteArray(0)
             c.disconnect()
+            active = null
             classify(name, code, body)
         } catch (e: Exception) {
+            active?.disconnect()
             JSONObject().put("status", "error").put("confidence", "low")
                 .put("detail", e.javaClass.simpleName + ": " + (e.message ?: "").take(160))
         }
