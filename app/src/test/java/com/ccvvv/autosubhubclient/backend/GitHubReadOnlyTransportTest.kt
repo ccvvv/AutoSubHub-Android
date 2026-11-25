@@ -22,7 +22,7 @@ class GitHubReadOnlyTransportTest {
         val workspace = Files.createTempDirectory("candidate-subscription-test").toFile()
         try {
             val commit = "a".repeat(40)
-            val manifest = """{"schema_version":1,"candidate_sha256":"${sha256(YAML)}","unique_candidates":1,"nodes":[{"node_id":"${"b".repeat(20)}","name":"node-one"}]}""".toByteArray()
+            val manifest = """{"schema_version":1,"candidate_sha256":"${sha256(YAML)}","unique_candidates":7,"nodes":[{"node_id":"${"b".repeat(20)}","name":"node-one"},{"node_id":"${"c".repeat(20)}","name":"node-two"}]}""".toByteArray()
             val requests = mutableListOf<String>()
             val transport = GitHubReadOnlyTransport(
                 config = config,
@@ -49,7 +49,7 @@ class GitHubReadOnlyTransportTest {
                 throw AssertionError("Candidate snapshot test failed: ${error.message}", error)
             }
             assertEquals(commit, bundle.candidateCommit)
-            assertEquals(1, bundle.candidateCount)
+            assertEquals(2, bundle.candidateCount)
             assertEquals(YAML.size, bundle.byteCount)
             assertEquals(sha256(YAML), bundle.candidateSha256)
             assertTrue(bundle.candidateFile.readBytes().contentEquals(YAML))
@@ -96,6 +96,11 @@ class GitHubReadOnlyTransportTest {
   type: socks5
   server: 127.0.0.1
   port: 1080
+- cipher: aes-256-gcm
+  name: node-two
+  type: ss
+  server: 127.0.0.2
+  port: 8388
 """.toByteArray()
     }
 }
