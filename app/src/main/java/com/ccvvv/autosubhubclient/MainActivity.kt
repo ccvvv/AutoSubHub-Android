@@ -22,6 +22,7 @@ import com.ccvvv.autosubhubclient.storage.LocalArtifactCleaner
 import com.ccvvv.autosubhubclient.storage.TaskStore
 import com.ccvvv.autosubhubclient.backend.BackendConfig
 import com.ccvvv.autosubhubclient.backend.GitHubReadOnlyTransport
+import com.ccvvv.autosubhubclient.backend.SshDeployKeyManager
 import com.ccvvv.autosubhubclient.runtime.MihomoCoreManager
 import com.ccvvv.autosubhubclient.runtime.PhoneProbeEngine
 
@@ -330,7 +331,67 @@ class MainActivity : Activity() {
             }
         }
         root.addView(mihomoSmokeButton)
-        addSection(root, "SSH 密钥", "尚未生成 · 后续加入本地密钥生成与公钥展示")
+        val sshHeading = TextView(this).apply {
+            text = "GitHub SSH 部署密钥"
+            textSize = 16f
+            setPadding(0, padding, 0, padding / 3)
+        }
+        root.addView(sshHeading)
+        val sshStatus = TextView(this).apply {
+            textSize = 13f
+            text = "尚未读取密钥。生成后将私钥保存在 App 私有目录，只展示可添加到 GitHub 的公钥。"
+        }
+        root.addView(sshStatus)
+        val sshPublicKey = TextView(this).apply {
+            textSize = 11f
+            typeface = Typeface.MONOSPACE
+            setTextIsSelectable(true)
+            setPadding(padding / 2, padding / 2, padding / 2, padding / 2)
+            text = "公钥尚未生成"
+        }
+        root.addView(sshPublicKey)
+        var currentSshPublicKey = ""
+        root.addView(Button(this).apply {
+            text = "生成 / 读取 SSH 密钥"
+            setOnClickListener {
+                isEnabled = false
+                sshStatus.text = "正在安全生成或读取 RSA 3072 SSH 密钥…"
+                ioExecutor.execute {
+                    try {
+                        val info = SshDeployKeyManager(filesDir).getOrCreate()
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed) {
+                                currentSshPublicKey = info.publicKey
+                                sshPublicKey.text = info.publicKey
+                                sshStatus.text = "密钥已就绪。指纹：${info.fingerprint}\n私钥保存在 App 私有目录，不会显示或上传。"
+                                isEnabled = true
+                            }
+                        }
+                    } catch (error: Exception) {
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed) {
+                                sshStatus.text = "SSH 密钥生成失败：${error.message ?: error.javaClass.simpleName}"
+                                isEnabled = true
+                            }
+                        }
+                    }
+                }
+            }
+        })
+        root.addView(Button(this).apply {
+            text = "复制 SSH 公钥"
+            setOnClickListener {
+                if (currentSshPublicKey.isBlank()) {
+                    Toast.makeText(this@MainActivity, "请先生成或读取 SSH 密钥", Toast.LENGTH_SHORT).show()
+                } else {
+                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("AutoSubHub GitHub deploy key", currentSshPublicKey))
+                    Toast.makeText(this@MainActivity, "公钥已复制；请添加到 AutoSubHub 仓库 Deploy keys", Toast.LENGTH_LONG).show()
+                }
+            }
+        })
+        addSection(root, "GitHub 添加位置",
+            "打开 ccvvv/AutoSubHub 仓库 → Settings → Deploy keys → Add deploy key。粘贴上面的公钥；如需 App 推送测速回执，必须勾选 Allow write access。不要上传或分享私钥。")
         addSection(root, "任务状态", "空闲 · 后续接入持久化后台任务")
         val concurrencyLabel = TextView(this).apply {
             text = "测速并发（1～300）"
