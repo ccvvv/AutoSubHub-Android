@@ -162,8 +162,8 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
             check(taskDir.mkdirs()) { "无法创建回执目录" }
             val receiptFile = File(taskDir, "receipt.json")
             atomicWrite(receiptFile, (receipt.toString(2) + "\n").toByteArray(Charsets.UTF_8))
-            atomicWrite(File(taskDir, "candidate.yaml"), candidateBytes)
-            atomicWrite(File(taskDir, "manifest.json"), bundle.manifestFile.readBytes())
+            atomicWrite(File(taskDir, "receipt.candidate.yaml"), candidateBytes)
+            atomicWrite(File(taskDir, "receipt.manifest.json"), bundle.manifestFile.readBytes())
             onProgress("本地回执已生成：" + receiptFile.absolutePath)
             return Outcome(task, receiptFile, ordered.size, names.size, high + normal, high, normal,
                 if (ordered.size == names.size) "completed" else "partial")
