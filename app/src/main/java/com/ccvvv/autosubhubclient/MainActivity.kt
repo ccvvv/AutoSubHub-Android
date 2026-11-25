@@ -15,8 +15,6 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import com.ccvvv.autosubhubclient.storage.LocalArtifactCleaner
 import com.ccvvv.autosubhubclient.storage.TaskStore
-import com.ccvvv.autosubhubclient.runtime.RuntimeEnvironment
-import com.ccvvv.autosubhubclient.runtime.RuntimeExecutionProbe
 import com.ccvvv.autosubhubclient.backend.BackendConfig
 import com.ccvvv.autosubhubclient.backend.GitHubReadOnlyTransport
 
@@ -181,40 +179,6 @@ class MainActivity : Activity() {
             }
         }
         root.addView(downloadQueueButton)
-        val runtimeStatus = TextView(this).apply {
-            textSize = 13f
-            text = RuntimeEnvironment.inspect(this@MainActivity).summary() +
-                "\n基础探针已随 APK 打包；测速运行环境仍在集成中"
-        }
-        root.addView(TextView(this).apply {
-            text = "运行环境"
-            textSize = 16f
-            setPadding(0, padding, 0, 0)
-        })
-        root.addView(runtimeStatus)
-        root.addView(Button(this).apply {
-            text = "执行 ELF 自检（无害测试程序）"
-            setOnClickListener {
-                isEnabled = false
-                ioExecutor.execute {
-                    val result = RuntimeExecutionProbe(this@MainActivity).runSelfTest()
-                    runOnUiThread {
-                        if (!isFinishing && !isDestroyed) {
-                            runtimeStatus.text = RuntimeEnvironment.inspect(
-                                this@MainActivity,
-                                elfExecutionVerified = result.success
-                            ).summary() + "\n" + result.detail
-                            isEnabled = true
-                            Toast.makeText(
-                                this@MainActivity,
-                                if (result.success) "ELF 执行成功" else "ELF 执行未通过：" + result.detail,
-                                Toast.LENGTH_LONG
-                            ).show()
-                        }
-                    }
-                }
-            }
-        })
         addSection(root, "SSH 密钥", "尚未生成 · 后续加入本地密钥生成与公钥展示")
         addSection(root, "任务状态", "空闲 · 后续接入持久化后台任务")
         val concurrencyLabel = TextView(this).apply {
