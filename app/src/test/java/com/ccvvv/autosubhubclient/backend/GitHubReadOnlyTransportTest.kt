@@ -31,7 +31,7 @@ class GitHubReadOnlyTransportTest {
                     when {
                         url.substringBefore("?").endsWith("/branches/published-subscriptions") -> {
                             assertEquals("application/vnd.github+json", accept)
-                            """{"commit":{"sha":"$commit"}}""".toByteArray()
+                            """{"commit": {"sha": "$commit"}}""".toByteArray()
                         }
                         else -> {
                             assertTrue("Unexpected GitHub request URL: $url", url.contains("/contents/"))
@@ -71,7 +71,7 @@ class GitHubReadOnlyTransportTest {
                 requestOverride = { url, _ ->
                     when {
                         url.contains("/branches/published-subscriptions") ->
-                            """{"commit":{"sha":"$commit"}}""".toByteArray()
+                            """{"commit": {"sha": "$commit"}}""".toByteArray()
                         url.contains("manifest.json") -> manifest
                         else -> {
                             assertTrue("Unexpected GitHub request URL: $url", url.contains("/contents/"))
