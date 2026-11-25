@@ -48,7 +48,13 @@ class GitHubReadOnlyTransport(
         val branch = JSONObject(
             String(request(GitHubBackendEndpoints.branch(config), GITHUB_JSON), Charsets.UTF_8)
         )
-        val candidateCommit = branch.optJSONObject("commit")?.optString("sha", "").orEmpty()
+        // GitHub's branch endpoint returns the commit object at the top level under "commit".
+        // Use required accessors so malformed or unexpected payloads fail with a precise cause.
+        val candidateCommit = runCatching {
+            branch.getJSONObject("commit").getString("sha").trim()
+        }.getOrElse {
+            throw IllegalArgumentException("GitHub branch response is missing commit.sha", it)
+        }
         require(candidateCommit.matches(Regex("(?i)^[a-f0-9]{40}$"))) {
             "GitHub returned an invalid data-branch head commit"
         }
