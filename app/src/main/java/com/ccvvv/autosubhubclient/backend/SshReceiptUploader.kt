@@ -133,6 +133,7 @@ class SshReceiptUploader(
                 git.commit().setMessage("Upload Android phone probe receipt $receiptId")
                     .setAuthor("AutoSubHub Android", "ccvvv@users.noreply.github.com").call()
                 val pushResults = git.push().setRemote("origin")
+                    .setRefSpecs(org.eclipse.jgit.transport.RefSpec("refs/heads/$FIXED_DATA_BRANCH:refs/heads/$FIXED_DATA_BRANCH"))
                     .setTransportConfigCallback { transport ->
                         if (transport is SshTransport) transport.sshSessionFactory = factory
                     }.call()
