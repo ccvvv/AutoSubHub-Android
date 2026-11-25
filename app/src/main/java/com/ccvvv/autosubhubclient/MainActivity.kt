@@ -23,6 +23,7 @@ import com.ccvvv.autosubhubclient.storage.TaskStore
 import com.ccvvv.autosubhubclient.backend.BackendConfig
 import com.ccvvv.autosubhubclient.backend.GitHubReadOnlyTransport
 import com.ccvvv.autosubhubclient.backend.SshDeployKeyManager
+import com.ccvvv.autosubhubclient.backend.SshReceiptUploader
 import com.ccvvv.autosubhubclient.runtime.MihomoCoreManager
 import com.ccvvv.autosubhubclient.runtime.PhoneProbeEngine
 
@@ -486,6 +487,53 @@ class MainActivity : Activity() {
                 val receipts = File(filesDir, "receipts").listFiles()
                     ?.filter { it.isDirectory && File(it, "receipt.json").isFile }.orEmpty()
                 probeStatus.text = "本地已保存 ${receipts.size} 份测速回执。上传功能独立接入中；此按钮不会重新测速或删除回执。"
+            }
+        })
+
+        root.addView(Button(this).apply {
+            text = "上传一份已保存测速回执（SSH）"
+            setOnClickListener {
+                val config = try {
+                    BackendConfig(repositoryUrl = backendInput.text.toString().trim()).also { it.validate() }
+                } catch (error: Exception) {
+                    probeStatus.text = "后端配置错误：${error.message}"
+                    return@setOnClickListener
+                }
+                val pending = File(filesDir, "receipts").listFiles()
+                    ?.filter { it.isDirectory && File(it, "receipt.json").isFile }
+                    ?.sortedBy { it.lastModified() }.orEmpty()
+                val receipt = pending.firstOrNull()?.let { File(it, "receipt.json") }
+                if (receipt == null) {
+                    probeStatus.text = "没有待上传的本地测速回执。"
+                    return@setOnClickListener
+                }
+                isEnabled = false
+                probeStatus.text = "正在通过 SSH 上传回执；不会重新测速…"
+                ioExecutor.execute {
+                    try {
+                        val result = SshReceiptUploader(config, filesDir).upload(receipt)
+                        val remaining = File(filesDir, "receipts").listFiles()
+                            ?.count { it.isDirectory && File(it, "receipt.json").isFile } ?: 0
+                        val message = "SSH 上传并远端核验成功。\n回执：${result.receiptId}\n远端提交：${result.commit}\n" +
+                            "已删除本地回执及两个快照文件（${result.deletedLocalFiles} 个）。\n剩余待上传回执：$remaining"
+                        appendMihomoLog(message)
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed) {
+                                probeStatus.text = message
+                                isEnabled = true
+                            }
+                        }
+                    } catch (error: Exception) {
+                        val message = "SSH 上传失败，本地回执完整保留：${error.message ?: error.javaClass.simpleName}"
+                        appendMihomoLog(message)
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed) {
+                                probeStatus.text = message
+                                isEnabled = true
+                            }
+                        }
+                    }
+                }
             }
         })
 
