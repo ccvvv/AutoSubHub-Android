@@ -67,19 +67,6 @@ class MainActivity : Activity() {
         }
         root.addView(backendInput)
 
-        val branchLabel = TextView(this).apply {
-            text = "数据分支"
-            textSize = 16f
-            setPadding(0, padding / 2, 0, 0)
-        }
-        root.addView(branchLabel)
-        val branchInput = EditText(this).apply {
-            hint = "published-subscriptions"
-            setSingleLine(true)
-            setText(preferences.getString(KEY_DATA_BRANCH, "published-subscriptions"))
-        }
-        root.addView(branchInput)
-
         val backendStatus = TextView(this).apply {
             textSize = 13f
             setPadding(0, padding / 3, 0, padding / 3)
@@ -91,12 +78,10 @@ class MainActivity : Activity() {
                 try {
                     val config = BackendConfig(
                         repositoryUrl = backendInput.text.toString().trim(),
-                        dataBranch = branchInput.text.toString().trim()
                     )
                     config.validate()
                     preferences.edit()
                         .putString(KEY_BACKEND_URL, config.repositoryUrl.trimEnd('/'))
-                        .putString(KEY_DATA_BRANCH, config.dataBranch)
                         .apply()
                     backendStatus.text = "配置已保存；尚未连接"
                     Toast.makeText(this@MainActivity, "后端配置已保存在本机", Toast.LENGTH_SHORT).show()
@@ -114,7 +99,6 @@ class MainActivity : Activity() {
                 val config = try {
                     BackendConfig(
                         repositoryUrl = backendInput.text.toString().trim(),
-                        dataBranch = branchInput.text.toString().trim()
                     ).also { it.validate() }
                 } catch (error: Exception) {
                     backendStatus.text = "配置错误：${error.message}"
@@ -122,7 +106,6 @@ class MainActivity : Activity() {
                 }
                 preferences.edit()
                     .putString(KEY_BACKEND_URL, config.repositoryUrl.trimEnd('/'))
-                    .putString(KEY_DATA_BRANCH, config.dataBranch)
                     .apply()
                 button.isEnabled = false
                 backendStatus.text = "正在读取 GitHub 回执（后台执行）…"
@@ -159,7 +142,6 @@ class MainActivity : Activity() {
                 val config = try {
                     BackendConfig(
                         repositoryUrl = backendInput.text.toString().trim(),
-                        dataBranch = branchInput.text.toString().trim()
                     ).also { it.validate() }
                 } catch (error: Exception) {
                     backendStatus.text = "配置错误：${error.message}"
@@ -167,7 +149,6 @@ class MainActivity : Activity() {
                 }
                 preferences.edit()
                     .putString(KEY_BACKEND_URL, config.repositoryUrl.trimEnd('/'))
-                    .putString(KEY_DATA_BRANCH, config.dataBranch)
                     .apply()
                 button.isEnabled = false
                 backendStatus.text = "正在下载 AutoSubHub 原始候选订阅…"
@@ -354,7 +335,6 @@ class MainActivity : Activity() {
 
     companion object {
         private const val KEY_BACKEND_URL = "backend_url"
-        private const val KEY_DATA_BRANCH = "data_branch"
         private const val KEY_PROBE_CONCURRENCY = "probe_concurrency"
         private const val DEFAULT_PROBE_CONCURRENCY = 50
         private const val MIN_PROBE_CONCURRENCY = 1
