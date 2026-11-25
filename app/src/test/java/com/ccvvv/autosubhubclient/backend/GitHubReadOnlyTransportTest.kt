@@ -18,7 +18,7 @@ class GitHubReadOnlyTransportTest {
 
 
     @Test
-    fun downloadsOriginalCandidateAndManifestFromOneImmutableCommit() {
+    fun downloadsCurrentCandidateAndManifestFromOneBranchHead() {
         val workspace = Files.createTempDirectory("candidate-subscription-test").toFile()
         try {
             val commit = "a".repeat(40)
@@ -31,11 +31,7 @@ class GitHubReadOnlyTransportTest {
                     when {
                         url.substringBefore("?").endsWith("/branches/published-subscriptions") -> {
                             assertEquals("application/vnd.github+json", accept)
-                            "{}".toByteArray()
-                        }
-                        url.contains("per_page=1") -> {
-                            assertEquals("application/vnd.github+json", accept)
-                            """[{"sha":"$commit"}]""".toByteArray()
+                            """{"commit":{"sha":"$commit"}}""".toByteArray()
                         }
                         else -> {
                             assertTrue("Unexpected GitHub request URL: $url", url.contains("/contents/"))
@@ -58,7 +54,7 @@ class GitHubReadOnlyTransportTest {
             assertEquals(sha256(YAML), bundle.candidateSha256)
             assertTrue(bundle.candidateFile.readBytes().contentEquals(YAML))
             assertTrue(bundle.manifestFile.readBytes().contentEquals(manifest))
-            assertEquals(4, requests.size)
+            assertEquals(3, requests.size)
         } finally {
             workspace.deleteRecursively()
         }
@@ -74,8 +70,8 @@ class GitHubReadOnlyTransportTest {
                 config = config,
                 requestOverride = { url, _ ->
                     when {
-                        url.contains("/branches/published-subscriptions") -> "{}".toByteArray()
-                        url.contains("/commits?") -> """[{"sha":"$commit"}]""".toByteArray()
+                        url.contains("/branches/published-subscriptions") ->
+                            """{"commit":{"sha":"$commit"}}""".toByteArray()
                         url.contains("manifest.json") -> manifest
                         else -> {
                             assertTrue("Unexpected GitHub request URL: $url", url.contains("/contents/"))
