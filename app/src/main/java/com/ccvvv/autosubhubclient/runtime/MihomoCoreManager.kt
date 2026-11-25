@@ -52,7 +52,10 @@ class MihomoCoreManager(context: Context) {
     fun startVersionCheck(): String {
         check(process == null) { "Mihomo 已在运行" }
         val binary = ensureInstalled()
-        val proc = ProcessBuilder(binary.absolutePath, "-v")
+        val linker = File("/system/bin/linker64")
+        check(linker.isFile) { "找不到 Android ARM64 linker64" }
+        // Termux-style workaround for Android app-data executable restrictions.
+        val proc = ProcessBuilder(linker.absolutePath, binary.absolutePath, "-v")
             .directory(coreDir)
             .redirectErrorStream(true)
             .start()
