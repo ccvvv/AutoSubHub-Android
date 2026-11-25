@@ -244,7 +244,6 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
                 if (ordered.size == names.size) "completed" else "partial")
         } finally {
             pool.shutdownNow()
-            streamPool.shutdownNow()
             process?.destroy()
             if (process?.isAlive == true) process?.destroyForcibly()
             config.delete()
