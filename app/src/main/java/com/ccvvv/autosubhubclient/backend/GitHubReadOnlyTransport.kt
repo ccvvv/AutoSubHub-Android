@@ -72,7 +72,8 @@ class GitHubReadOnlyTransport(
         }
         val candidateCount = yaml.lineSequence().count { it.matches(Regex("^-\\s+.+$")) }
         val manifest = JSONObject(String(manifestBytes, Charsets.UTF_8))
-        require(manifest.optInt("schema_version", -1) == 1) {
+        val schemaVersion = manifest.optString("schema_version", "").toIntOrNull()
+        require(schemaVersion == 1) {
             "Unsupported candidate manifest schema"
         }
         val expectedHash = manifest.optString("candidate_sha256", "").lowercase()
