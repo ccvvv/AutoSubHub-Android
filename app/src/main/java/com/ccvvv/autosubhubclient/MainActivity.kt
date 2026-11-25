@@ -23,6 +23,7 @@ import com.ccvvv.autosubhubclient.storage.TaskStore
 import com.ccvvv.autosubhubclient.backend.BackendConfig
 import com.ccvvv.autosubhubclient.backend.GitHubReadOnlyTransport
 import com.ccvvv.autosubhubclient.runtime.MihomoCoreManager
+import com.ccvvv.autosubhubclient.runtime.PhoneProbeEngine
 
 class MainActivity : Activity() {
     private val ioExecutor: ExecutorService = Executors.newFixedThreadPool(2)
@@ -360,6 +361,70 @@ class MainActivity : Activity() {
                 preferences.edit().putInt(KEY_PROBE_CONCURRENCY, value).apply()
                 concurrencyStatus.text = "已保存：" + value + " 个并发任务（新任务读取此设置）"
                 Toast.makeText(this@MainActivity, "并发设置已保存", Toast.LENGTH_SHORT).show()
+            }
+        })
+
+        val probeStatus = TextView(this).apply {
+            textSize = 13f
+            setPadding(0, padding / 2, 0, padding / 3)
+            text = "正式测速：尚未开始。将执行五站验证、六项流媒体检测和 5 MiB 下载测速。"
+        }
+        root.addView(probeStatus)
+        val formalProbeButton = Button(this).apply {
+            text = "开始正式测速（生成本地回执）"
+            setOnClickListener {
+                val config = try {
+                    BackendConfig(repositoryUrl = backendInput.text.toString().trim()).also { it.validate() }
+                } catch (error: Exception) {
+                    probeStatus.text = "后端配置错误：${error.message}"
+                    return@setOnClickListener
+                }
+                val workers = preferences.getInt(KEY_PROBE_CONCURRENCY, DEFAULT_PROBE_CONCURRENCY)
+                    .coerceIn(MIN_PROBE_CONCURRENCY, MAX_PROBE_CONCURRENCY)
+                isEnabled = false
+                probeStatus.text = "正在准备正式测速；并发 $workers"
+                appendMihomoLog("开始正式测速：并发 $workers；五站 + 六项流媒体 + 5 MiB 下载")
+                ioExecutor.execute {
+                    try {
+                        val transport = GitHubReadOnlyTransport(config)
+                        val candidate = transport.fetchCandidateSubscription(File(filesDir, "candidate-subscriptions"))
+                        appendMihomoLog("候选清单已核验：${candidate.candidateCount} 个节点，提交 ${candidate.candidateCommit}")
+                        val outcome = PhoneProbeEngine(MihomoCoreManager(applicationContext), filesDir).run(candidate, workers) { progress ->
+                            runOnUiThread {
+                                if (!isFinishing && !isDestroyed) probeStatus.text = progress
+                            }
+                        }
+                        val message = "正式测速完成：${outcome.tested}/${outcome.total}\n" +
+                            "通过：${outcome.passed}（高速 ${outcome.high}，普通 ${outcome.normal}）\n" +
+                            "回执状态：${outcome.status}\n任务：${outcome.taskId}\n本地回执：${outcome.receiptFile.absolutePath}\n" +
+                            "回执已保存；尚未上传。"
+                        appendMihomoLog(message)
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed) {
+                                probeStatus.text = message
+                                isEnabled = true
+                            }
+                        }
+                    } catch (error: Exception) {
+                        val detail = android.util.Log.getStackTraceString(error)
+                        appendMihomoLog("正式测速失败：$detail")
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed) {
+                                probeStatus.text = "正式测速失败：${error.message ?: error.javaClass.simpleName}"
+                                isEnabled = true
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        root.addView(formalProbeButton)
+        root.addView(Button(this).apply {
+            text = "查看本地测速回执数量"
+            setOnClickListener {
+                val receipts = File(filesDir, "receipts").listFiles()
+                    ?.filter { it.isDirectory && File(it, "receipt.json").isFile }.orEmpty()
+                probeStatus.text = "本地已保存 ${receipts.size} 份测速回执。上传功能独立接入中；此按钮不会重新测速或删除回执。"
             }
         })
 
