@@ -72,14 +72,20 @@ class GitHubReadOnlyTransport(
         }
         val candidateCount = yaml.lineSequence().count { it.matches(Regex("^-\\s+.+$")) }
         val manifest = JSONObject(String(manifestBytes, Charsets.UTF_8))
-        val schemaVersion = manifest.opt("schema_version")?.let { value ->
-            when (value) {
-                is Number -> value.toInt().takeIf { value.toDouble() == it.toDouble() }
-                else -> value.toString().toIntOrNull()
+        val schemaValue = manifest.opt("schema_version")
+        val schemaVersion = try {
+            when (schemaValue) {
+                is Number -> java.math.BigDecimal(schemaValue.toString()).intValueExact()
+                is String -> java.math.BigDecimal(schemaValue.trim()).intValueExact()
+                else -> null
             }
+        } catch (_: ArithmeticException) {
+            null
+        } catch (_: NumberFormatException) {
+            null
         }
         require(schemaVersion == 1) {
-            "Unsupported candidate manifest schema"
+            "Unsupported candidate manifest schema (value=$schemaValue, type=${schemaValue?.javaClass?.name})"
         }
         val expectedHash = manifest.opt("candidate_sha256")?.toString()?.lowercase().orEmpty()
         val actualHash = sha256(candidateBytes)
