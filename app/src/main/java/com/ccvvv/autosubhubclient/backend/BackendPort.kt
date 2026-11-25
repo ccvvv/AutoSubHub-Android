@@ -6,10 +6,11 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
 const val CURRENT_BACKEND_CONTRACT_VERSION = 1
+const val FIXED_DATA_BRANCH = "published-subscriptions"
 
 data class BackendConfig(
     val repositoryUrl: String,
-    val dataBranch: String,
+    val dataBranch: String = FIXED_DATA_BRANCH,
     val contractVersion: Int = CURRENT_BACKEND_CONTRACT_VERSION
 ) {
     fun validate() {
@@ -34,7 +35,7 @@ data class BackendConfig(
         require(segments.none { it == "." || it == ".." }) {
             "Invalid GitHub repository path"
         }
-        require(isValidGitBranch(dataBranch)) { "Invalid Git data branch name" }
+        require(dataBranch == FIXED_DATA_BRANCH) { "This app is locked to the $FIXED_DATA_BRANCH data branch" }
         require(contractVersion == CURRENT_BACKEND_CONTRACT_VERSION) {
             "Unsupported backend contract version: $contractVersion"
         }
