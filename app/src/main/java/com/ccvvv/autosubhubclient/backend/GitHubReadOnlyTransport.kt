@@ -108,10 +108,8 @@ class GitHubReadOnlyTransport(
                 "Candidate manifest contains duplicate node names or IDs"
             }
         }
-        val uniqueToken = Regex("""\"unique_candidates\"\s*:\s*([0-9]+)""")
-            .find(manifestText)?.groupValues?.getOrNull(1)?.toIntOrNull()
-        require(candidateCount == nodeObjects.size && uniqueToken == nodeObjects.size) {
-            "Candidate YAML and manifest node counts do not match"
+        require(candidateCount > 0 && candidateCount == nodeObjects.size) {
+            "Candidate YAML proxy count ($candidateCount) does not match manifest node count (${nodeObjects.size})"
         }
 
         val target = File(workspace, "candidate-$actualHash")
