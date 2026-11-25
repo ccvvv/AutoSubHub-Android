@@ -177,9 +177,13 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
     }
 
     private fun makeConfig(candidate: String, names: List<String>, workers: Int, apiPort: Int, base: Int, secret: String): String {
-        val refs = names.joinToString(", ") { yamlSingleQuoted(it) }
+        // Each worker only tests its own modulo-partitioned batch. Keep its
+        // selector limited to that batch instead of repeating all 2,285 names
+        // on one enormous YAML flow line for every worker.
         val groups = (0 until workers).joinToString("\n") { i ->
-            "  - name: PHONE-%02d\n    type: select\n    proxies: [%s]".format(i, refs)
+            val batch = names.filterIndexed { index, _ -> index % workers == i }
+            val proxyEntries = batch.joinToString("\n") { "      - ${yamlSingleQuoted(it)}" }
+            "  - name: PHONE-%02d\n    type: select\n    proxies:\n%s".format(i, proxyEntries)
         }
         val listeners = (0 until workers).joinToString("\n") { i ->
             "  - name: phone-%02d\n    type: mixed\n    listen: 127.0.0.1\n    port: %d\n    proxy: PHONE-%02d".format(i, base + i, i)
