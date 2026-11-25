@@ -5,12 +5,10 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
+import java.util.concurrent.TimeUnit
 import java.util.zip.GZIPInputStream
 
-/**
- * Downloads the official Android ARM64 Mihomo release, verifies the compressed
- * asset against its published SHA-256, then extracts it into app-private storage.
- */
+/** Downloads and runs the official Android ARM64 Mihomo in app-private storage. */
 class MihomoCoreManager(context: Context) {
     private val coreDir = File(context.filesDir, "mihomo").apply { mkdirs() }
     private val archive = File(coreDir, ASSET_NAME)
@@ -52,28 +50,72 @@ class MihomoCoreManager(context: Context) {
     fun startVersionCheck(): String {
         check(process == null) { "Mihomo 已在运行" }
         val binary = ensureInstalled()
-        val linker = File("/system/bin/linker64")
-        check(linker.isFile) { "找不到 Android ARM64 linker64" }
-        // Termux-style workaround for Android app-data executable restrictions.
-        val proc = ProcessBuilder(linker.absolutePath, binary.absolutePath, "-v")
-            .directory(coreDir)
-            .redirectErrorStream(true)
-            .start()
-        process = proc
+        val proc = linkerProcess(binary, "-v")
         val output = proc.inputStream.bufferedReader().use { it.readText() }
         val exit = proc.waitFor()
-        process = null
         check(exit == 0) { "Mihomo 启动失败（退出码 $exit）：$output" }
         return output.trim().ifEmpty { "Mihomo 核心启动成功" }
+    }
+
+    /** Validate a minimal local config, launch the core, confirm it stays alive, then stop it. */
+    @Synchronized
+    fun testMinimalConfig(): String {
+        check(process == null) { "Mihomo 已在运行" }
+        val binary = ensureInstalled()
+        val config = File(coreDir, "smoke-test.yaml").apply {
+            writeText(
+                """
+                mixed-port: 17890
+                allow-lan: false
+                mode: rule
+                log-level: warning
+                ipv6: false
+                """.trimIndent() + "\n"
+            )
+        }
+        val validation = linkerProcess(binary, "-t", "-f", config.absolutePath)
+        val validationOutput = validation.inputStream.bufferedReader().use { it.readText() }
+        val validationExit = validation.waitFor()
+        check(validationExit == 0) {
+            "最小配置校验失败（退出码 $validationExit）：$validationOutput"
+        }
+
+        val running = ProcessBuilder(
+            "/system/bin/linker64", binary.absolutePath,
+            "-d", coreDir.absolutePath, "-f", config.absolutePath
+        ).directory(coreDir).redirectErrorStream(true).start()
+        process = running
+        try {
+            if (!running.waitFor(2, TimeUnit.SECONDS)) {
+                check(running.isAlive) { "Mihomo 启动后立即退出" }
+                return "最小配置校验通过；核心启动并持续运行 2 秒，已正常停止"
+            }
+            val output = running.inputStream.bufferedReader().use { it.readText() }
+            check(running.exitValue() == 0) {
+                "Mihomo 启动失败（退出码 ${running.exitValue()}）：$output"
+            }
+            return "核心启动并自行退出：$output"
+        } finally {
+            running.destroy()
+            if (running.isAlive) running.destroyForcibly()
+            process = null
+        }
     }
 
     @Synchronized
     fun stop() {
         process?.destroy()
-        process?.let {
-            if (it.isAlive) it.destroyForcibly()
-        }
+        process?.let { if (it.isAlive) it.destroyForcibly() }
         process = null
+    }
+
+    private fun linkerProcess(binary: File, vararg args: String): Process {
+        val linker = File("/system/bin/linker64")
+        check(linker.isFile) { "找不到 Android ARM64 linker64" }
+        return ProcessBuilder(listOf(linker.absolutePath, binary.absolutePath) + args)
+            .directory(coreDir)
+            .redirectErrorStream(true)
+            .start()
     }
 
     private fun sha256(file: File): String {
