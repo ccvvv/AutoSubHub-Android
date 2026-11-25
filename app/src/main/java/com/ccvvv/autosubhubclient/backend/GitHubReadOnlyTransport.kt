@@ -70,7 +70,7 @@ class GitHubReadOnlyTransport(
         require(yaml.lineSequence().any { it.trim() == "proxies:" }) {
             "Candidate subscription is not a valid proxies YAML document"
         }
-        val candidateCount = yaml.lineSequence().count { it.matches(Regex("^\\s*-\\s+name\\s*:\\s*.+$")) }
+        val candidateCount = yaml.lineSequence().count { it.matches(Regex("^-\\s+\\S.*$")) }
         val manifestText = String(manifestBytes, Charsets.UTF_8)
         val manifest = JSONObject(manifestText)
         // Android's lightweight local-test JSONObject may not expose opt(key) reliably;
