@@ -4,6 +4,8 @@ This mapping reflects the current AutoSubHub repository data contract.
 
 ## Configured data target
 
+- User input: one GitHub repository URL only (for example `https://github.com/ccvvv/AutoSubHub`).
+- The Android client locks the data branch internally to `published-subscriptions`; users do not enter or select a branch.
 - Repository default: `ccvvv/AutoSubHub`
 - Data branch: `published-subscriptions`
 - Candidate snapshot: `candidate/subscription.yaml`
@@ -19,7 +21,7 @@ The Android client must read the original candidate pool rather than the removed
 1. Verify the configured repository and data branch exist.
 2. Query the latest commit touching `candidate/subscription.yaml`.
 3. Download `candidate/subscription.yaml` and `candidate/manifest.json` at that exact commit SHA, not at a moving branch name.
-4. Verify manifest schema version, SHA-256 of the exact YAML bytes, unique node names/IDs, and node count.
+4. Verify manifest schema version, SHA-256 of the exact YAML bytes, unique node names/IDs, and the number of top-level proxy entries against the manifest `nodes` array length. The `unique_candidates` field describes the earlier globally deduplicated source pool, not the current published YAML count; it must not be compared with `nodes.length`.
 5. Store the YAML and manifest together as an immutable local generation.
 
 The immutable commit pin prevents a branch update between two downloads from mixing a YAML file from one generation with a manifest from another. The app does not enumerate candidate history, merge snapshots, or implement a second candidate cursor.
