@@ -4,6 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
@@ -60,7 +61,7 @@ class GitHubReadOnlyTransport(
         }
 
         fun readSnapshot(path: String): ByteArray = request(
-            GitHubBackendEndpoints.contentsFile(config, path, candidateCommit),
+            rawSnapshotUrl(path, candidateCommit),
             GITHUB_RAW
         ).also { require(it.isNotEmpty()) { "Candidate snapshot file is empty: $path" } }
 
@@ -186,28 +187,49 @@ class GitHubReadOnlyTransport(
         )
     }
 
+    private fun rawSnapshotUrl(path: String, commit: String): String {
+        val (owner, repository) = config.ownerAndRepository
+        val encodedPath = path.split('/').joinToString("/") {
+            java.net.URLEncoder.encode(it, Charsets.UTF_8.name()).replace("+", "%20")
+        }
+        return "https://raw.githubusercontent.com/$owner/$repository/$commit/$encodedPath"
+    }
+
     private fun request(url: String, accept: String): ByteArray {
         requestOverride?.let { return it(url, accept) }
-        val connection = URL(url).openConnection() as HttpURLConnection
-        try {
-            connection.requestMethod = "GET"
-            connection.connectTimeout = connectTimeoutMs
-            connection.readTimeout = readTimeoutMs
-            connection.instanceFollowRedirects = false
-            connection.setRequestProperty("Accept", accept)
-            connection.setRequestProperty("User-Agent", "AutoSubHub-Android/0.1")
-            connection.setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
-            val status = connection.responseCode
-            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
-            val body = stream?.use { readBounded(it, MAX_RESPONSE_BYTES) } ?: ByteArray(0)
-            if (status !in 200..299) {
-                val detail = String(body, Charsets.UTF_8).take(500)
-                throw IllegalStateException("GitHub read failed (HTTP $status): $detail")
+        var lastError: IOException? = null
+        for (attempt in 0 until REQUEST_ATTEMPTS) {
+            val connection = URL(url).openConnection() as HttpURLConnection
+            try {
+                connection.requestMethod = "GET"
+                connection.connectTimeout = connectTimeoutMs
+                connection.readTimeout = readTimeoutMs
+                connection.instanceFollowRedirects = true
+                connection.setRequestProperty("Accept", accept)
+                connection.setRequestProperty("User-Agent", "AutoSubHub-Android/0.1")
+                connection.setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
+                val status = connection.responseCode
+                val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+                val body = stream?.use { readBounded(it, MAX_RESPONSE_BYTES) } ?: ByteArray(0)
+                if (status !in 200..299) {
+                    val detail = String(body, Charsets.UTF_8).take(500)
+                    val error = IllegalStateException("GitHub read failed (HTTP $status): $detail")
+                    if ((status == 429 || status in 500..599) && attempt + 1 < REQUEST_ATTEMPTS) {
+                        Thread.sleep(RETRY_DELAY_MS * (attempt + 1))
+                        continue
+                    }
+                    throw error
+                }
+                return body
+            } catch (error: IOException) {
+                lastError = error
+                if (attempt + 1 >= REQUEST_ATTEMPTS) throw error
+                Thread.sleep(RETRY_DELAY_MS * (attempt + 1))
+            } finally {
+                connection.disconnect()
             }
-            return body
-        } finally {
-            connection.disconnect()
         }
+        throw lastError ?: IOException("GitHub request failed")
     }
 
     private fun readBounded(input: java.io.InputStream, maxBytes: Int): ByteArray {
@@ -252,6 +274,8 @@ class GitHubReadOnlyTransport(
 
     companion object {
         private const val MAX_RESPONSE_BYTES = 32 * 1024 * 1024
+        private const val REQUEST_ATTEMPTS = 3
+        private const val RETRY_DELAY_MS = 500L
         private const val GITHUB_JSON = "application/vnd.github+json"
         private const val GITHUB_RAW = "application/vnd.github.raw+json"
     }
