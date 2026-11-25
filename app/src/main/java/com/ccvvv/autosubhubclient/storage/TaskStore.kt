@@ -62,7 +62,8 @@ class TaskStore(context: Context) : SQLiteOpenHelper(
                 content_sha256 TEXT,
                 remote_revision TEXT,
                 verified_at INTEGER,
-                complete_bundle_verified INTEGER NOT NULL DEFAULT 0
+                complete_bundle_verified INTEGER NOT NULL DEFAULT 0,
+                requested_concurrency INTEGER NOT NULL DEFAULT 50
             )""".trimIndent()
         )
         db.execSQL(
@@ -119,22 +120,41 @@ class TaskStore(context: Context) : SQLiteOpenHelper(
             )
             version = 2
         }
+        if (version < 3) {
+            db.execSQL("ALTER TABLE tasks ADD COLUMN requested_concurrency INTEGER NOT NULL DEFAULT 50")
+            version = 3
+        }
         if (version != newVersion) {
             throw IllegalStateException("No migration path from database $oldVersion to $newVersion")
         }
     }
 
+    /** Backward-compatible task creation; default concurrency is frozen at 50. */
     fun createTask(taskId: String, now: Long = System.currentTimeMillis()) {
+        createTaskWithConcurrency(taskId, DEFAULT_PROBE_CONCURRENCY, now)
+    }
+
+    /** Freeze the selected concurrency so later UI changes cannot alter this task. */
+    fun createTaskWithConcurrency(taskId: String, requestedConcurrency: Int, now: Long = System.currentTimeMillis()) {
         require(taskId.matches(Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")))
         require(taskId != "." && taskId != "..")
+        require(requestedConcurrency in MIN_PROBE_CONCURRENCY..MAX_PROBE_CONCURRENCY) {
+            "Probe concurrency must be between 1 and 300"
+        }
         val values = ContentValues().apply {
             put("task_id", taskId)
             put("state", TaskState.QUEUED.name)
             put("created_at", now)
             put("updated_at", now)
+            put("requested_concurrency", requestedConcurrency)
         }
         writableDatabase.insertOrThrow("tasks", null, values)
     }
+
+    fun getRequestedConcurrency(taskId: String): Int? =
+        readableDatabase.query("tasks", arrayOf("requested_concurrency"), "task_id = ?", arrayOf(taskId), null, null, null).use { cursor ->
+            if (cursor.moveToFirst()) cursor.getInt(0) else null
+        }
 
     fun getTaskState(taskId: String): TaskState? =
         readableDatabase.query(
@@ -455,6 +475,9 @@ class TaskStore(context: Context) : SQLiteOpenHelper(
 
     companion object {
         private const val DATABASE_NAME = "autosubhub_tasks.db"
-        private const val DATABASE_VERSION = 2
+        private const val DATABASE_VERSION = 3
+        private const val DEFAULT_PROBE_CONCURRENCY = 50
+        private const val MIN_PROBE_CONCURRENCY = 1
+        private const val MAX_PROBE_CONCURRENCY = 300
     }
 }
