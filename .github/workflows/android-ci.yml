@@ -52,9 +52,12 @@ jobs:
           "$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" -h app/src/main/jniLibs/arm64-v8a/libruntime_probe.so | grep -E "Class:|Machine:|Type:"
           unzip -l app/build/outputs/apk/debug/app-debug.apk | grep "lib/arm64-v8a/libruntime_probe.so"
 
+      - name: Rename debug APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/AutoSubHub-Android-NewApp-debug.apk
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: AutoSubHub-Android-debug
-          path: app/build/outputs/apk/debug/*.apk
+          name: AutoSubHub-Android-NewApp-debug
+          path: app/build/outputs/apk/debug/AutoSubHub-Android-NewApp-debug.apk
           if-no-files-found: error
