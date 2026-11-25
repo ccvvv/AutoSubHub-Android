@@ -1,7 +1,6 @@
 package com.ccvvv.autosubhubclient.backend
 
 import org.eclipse.jgit.api.Git
-import org.eclipse.jgit.api.errors.GitAPIException
 import org.eclipse.jgit.lib.Constants
 import org.eclipse.jgit.revwalk.RevWalk
 import org.eclipse.jgit.treewalk.TreeWalk
@@ -131,7 +130,8 @@ class SshReceiptUploader(
                 git.add().addFilepattern("receipts/latest.json").addFilepattern("receipts/candidate.yaml")
                     .addFilepattern("receipts/manifest.json").call()
                 git.commit().setMessage("Upload Android phone probe receipt $receiptId")
-                    .setAuthor("AutoSubHub Android", "ccvvv@users.noreply.github.com").call()
+                    .setAuthor("AutoSubHub Android", "ccvvv@users.noreply.github.com")
+                    .setCommitter("AutoSubHub Android", "ccvvv@users.noreply.github.com").call()
                 val pushResults = git.push().setRemote("origin")
                     .setRefSpecs(org.eclipse.jgit.transport.RefSpec("refs/heads/$FIXED_DATA_BRANCH:refs/heads/$FIXED_DATA_BRANCH"))
                     .setTransportConfigCallback { transport ->
