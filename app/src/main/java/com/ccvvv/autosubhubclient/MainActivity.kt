@@ -185,6 +185,44 @@ class MainActivity : Activity() {
             }
         }
         root.addView(downloadQueueButton)
+        root.addView(Button(this).apply {
+            text = "校验候选订阅的 Mihomo 配置"
+            setOnClickListener {
+                isEnabled = false
+                mihomoStatus.text = "正在校验候选订阅配置…"
+                appendMihomoLog("开始候选订阅配置校验")
+                ioExecutor.execute {
+                    try {
+                        val workspace = File(filesDir, "candidate-subscriptions")
+                        val candidateFile = workspace.listFiles()
+                            ?.filter { it.isDirectory && it.name.startsWith("candidate-") }
+                            ?.sortedByDescending { it.lastModified() }
+                            ?.firstOrNull()
+                            ?.let { File(it, "subscription.yaml") }
+                            ?: throw IllegalStateException("请先点击“下载原始待测速订阅”")
+                        appendMihomoLog("使用本地候选文件：${candidateFile.name}")
+                        val result = MihomoCoreManager(applicationContext)
+                            .validateCandidateSubscription(candidateFile)
+                        appendMihomoLog("候选配置校验结果：$result")
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed) {
+                                mihomoStatus.text = result
+                                isEnabled = true
+                            }
+                        }
+                    } catch (error: Exception) {
+                        val detail = android.util.Log.getStackTraceString(error)
+                        appendMihomoLog("候选配置校验失败：$detail")
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed) {
+                                mihomoStatus.text = "候选配置校验失败：${error.message ?: error.javaClass.simpleName}"
+                                isEnabled = true
+                            }
+                        }
+                    }
+                }
+            }
+        })
 
         val mihomoStatus = TextView(this).apply {
             textSize = 13f
