@@ -73,7 +73,7 @@ class MihomoCoreManager(context: Context) {
                 """.trimIndent() + "\n"
             )
         }
-        val validation = linkerProcess(binary, "-t", "-f", config.absolutePath)
+        val validation = linkerProcess(binary, "-d", coreDir.absolutePath, "-t", "-f", config.absolutePath)
         val validationOutput = validation.inputStream.bufferedReader().use { it.readText() }
         val validationExit = validation.waitFor()
         check(validationExit == 0) {
