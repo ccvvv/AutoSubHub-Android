@@ -72,7 +72,12 @@ class GitHubReadOnlyTransport(
         }
         val candidateCount = yaml.lineSequence().count { it.matches(Regex("^-\\s+.+$")) }
         val manifest = JSONObject(String(manifestBytes, Charsets.UTF_8))
-        val schemaVersion = manifest.opt("schema_version")?.toString()?.toIntOrNull()
+        val schemaVersion = manifest.opt("schema_version")?.let { value ->
+            when (value) {
+                is Number -> value.toInt().takeIf { value.toDouble() == it.toDouble() }
+                else -> value.toString().toIntOrNull()
+            }
+        }
         require(schemaVersion == 1) {
             "Unsupported candidate manifest schema"
         }
