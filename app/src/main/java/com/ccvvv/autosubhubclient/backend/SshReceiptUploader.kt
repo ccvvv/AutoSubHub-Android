@@ -132,13 +132,19 @@ class SshReceiptUploader(
                     .addFilepattern("receipts/manifest.json").call()
                 git.commit().setMessage("Upload Android phone probe receipt $receiptId")
                     .setAuthor("AutoSubHub Android", "ccvvv@users.noreply.github.com").call()
-                git.push().setRemote("origin")
+                val pushResults = git.push().setRemote("origin")
                     .setTransportConfigCallback { transport ->
                         if (transport is SshTransport) transport.sshSessionFactory = factory
                     }.call()
+                val updates = pushResults.flatMap { it.remoteUpdates }
+                require(updates.isNotEmpty() && updates.all {
+                    it.status == org.eclipse.jgit.transport.RemoteRefUpdate.Status.OK ||
+                        it.status == org.eclipse.jgit.transport.RemoteRefUpdate.Status.UP_TO_DATE
+                }) { "GitHub 未确认 published-subscriptions 分支推送成功" }
             }
+            val uploadedCommit = repository.resolve(Constants.HEAD) ?: error("无法读取本地上传提交")
 
-            // Acknowledgement alone is not enough: fetch and compare the exact remote tree blobs.
+            // Acknowledgement alone is not enough: fetch, prove branch ancestry, and compare exact blobs.
             git.fetch().setRemote("origin")
                 .setTransportConfigCallback { transport ->
                     if (transport is SshTransport) transport.sshSessionFactory = factory
@@ -146,9 +152,11 @@ class SshReceiptUploader(
             val remoteHead = repository.resolve("refs/remotes/origin/$FIXED_DATA_BRANCH")
                 ?: error("推送后无法读取远端数据分支")
             val verified = RevWalk(repository).use { walk ->
-                val commit = walk.parseCommit(remoteHead)
+                val uploaded = walk.parseCommit(uploadedCommit)
+                val remote = walk.parseCommit(remoteHead)
+                check(walk.isMergedInto(uploaded, remote)) { "远端分支尚未包含本次回执提交" }
                 fun blob(path: String): ByteArray {
-                    val tree = TreeWalk.forPath(repository, path, commit.tree)
+                    val tree = TreeWalk.forPath(repository, path, uploaded.tree)
                         ?: error("远端缺少文件：$path")
                     tree.use { return repository.open(tree.getObjectId(0)).bytes }
                 }
@@ -157,7 +165,7 @@ class SshReceiptUploader(
                     blob("receipts/manifest.json").contentEquals(manifestBytes)
             }
             check(verified) { "远端回执内容核验失败；本地文件已保留" }
-            val commitSha = remoteHead.name
+            val commitSha = uploadedCommit.name
             // Delete only after remote commit and all three exact file contents were verified.
             var deleted = 0
             listOf(receiptFile, candidateFile, manifestFile).forEach { if (it.delete()) deleted++ }
