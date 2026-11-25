@@ -13,8 +13,13 @@ class BackendPortTest {
     )
 
     @Test
-    fun acceptsSupportedGitHubBackendConfiguration() {
+    fun acceptsRepositoryUrlWithTheFixedDataBranch() {
         config().validate()
+        assertEquals("https://github.com/owner/repository#published-subscriptions", config().identity)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun rejectsUserSelectedAlternativeBranch() {
         config("release/2026-11").validate()
     }
 
@@ -24,25 +29,19 @@ class BackendPortTest {
     }
 
     @Test(expected = IllegalArgumentException::class)
-    fun rejectsUnsafeGitBranchName() {
-        config("feature/bad?branch").validate()
-    }
-
-    @Test(expected = IllegalArgumentException::class)
     fun rejectsRepositoryUrlWithQueryParameters() {
         config().copy(repositoryUrl = "https://github.com/owner/repository?redirect=evil").validate()
     }
 
     @Test
-    fun endpointBuilderEncodesBranchAndPathWithoutChangingPathSeparators() {
-        val branch = "release/2026-11"
-        val branchUrl = GitHubBackendEndpoints.branch(config(branch))
-        assertTrue(branchUrl.endsWith("/branches/release%2F2026-11"))
+    fun endpointBuilderUsesTheFixedDataBranchAndPreservesPathSeparators() {
+        val branchUrl = GitHubBackendEndpoints.branch(config())
+        assertTrue(branchUrl.endsWith("/branches/published-subscriptions"))
 
         val contentUrl = GitHubBackendEndpoints.contentsFile(
-            config(branch), "candidate/pending-manifest.json", branch
+            config(), "candidate/pending-manifest.json", "published-subscriptions"
         )
-        assertTrue(contentUrl.contains("/contents/candidate/pending-manifest.json?ref=release%2F2026-11"))
+        assertTrue(contentUrl.contains("/contents/candidate/pending-manifest.json?ref=published-subscriptions"))
     }
 
     @Test(expected = IllegalArgumentException::class)
