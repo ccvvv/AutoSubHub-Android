@@ -56,10 +56,10 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
             core.startVersionCheck()
             val binary = core.executable
             val validateLog = File(dir, "probe-$task-validate.log")
-            val check = ProcessBuilder("/system/bin/linker64", binary.absolutePath, "-t", "-f", config.absolutePath)
+            val validationProcess = ProcessBuilder("/system/bin/linker64", binary.absolutePath, "-t", "-f", config.absolutePath)
                 .directory(dir).redirectErrorStream(true).redirectOutput(validateLog).start()
-            check(check.waitFor(45, TimeUnit.SECONDS)) { "Mihomo 配置校验超时" }
-            check(check.exitValue() == 0) { "Mihomo 配置校验失败：" + validateLog.readText().take(1000) }
+            check(validationProcess.waitFor(45, TimeUnit.SECONDS)) { "Mihomo 配置校验超时" }
+            check(validationProcess.exitValue() == 0) { "Mihomo 配置校验失败：" + validateLog.readText().take(1000) }
             process = ProcessBuilder("/system/bin/linker64", binary.absolutePath, "-d", dir.absolutePath, "-f", config.absolutePath)
                 .directory(dir).redirectErrorStream(true).redirectOutput(log).start()
             val api = "http://127.0.0.1:$apiPort"
