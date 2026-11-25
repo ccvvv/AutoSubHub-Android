@@ -117,31 +117,7 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
                                     .put("passed_services", JSONArray(appPassed))
                                     .put("status", if (appPassed.size == 5) "passed" else "failed"))
 
-                            stage = "streaming_checks"
-                            stageStart = System.nanoTime()
-                            val targets = linkedMapOf(
-                                "netflix" to "https://www.netflix.com/title/80018499",
-                                "youtube_premium" to "https://www.youtube.com/premium",
-                                "disney_plus" to "https://www.disneyplus.com/",
-                                "bilibili" to "https://api.bilibili.com/x/web-interface/nav",
-                                "spotify" to "https://open.spotify.com/",
-                                "tiktok" to "https://www.tiktok.com/"
-                            )
-                            val pending = targets.map { (key, url) -> key to streamPool.submit(Callable { checkStreaming(key, url, proxy) }) }
-                            val streams = JSONObject()
-                            pending.forEach { (key, future) ->
-                                streams.put(key, try { future.get() } catch (e: Exception) {
-                                    JSONObject().put("status", "error").put("confidence", "low")
-                                        .put("detail", e.javaClass.simpleName + ": " + (e.message ?: "").take(160))
-                                })
-                            }
-                            stageTimes.put("streaming_checks_ms", TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - stageStart))
-                            val yes = targets.keys.count { streams.optJSONObject(it)?.optString("status") == "yes" }
-                            val streamVerdict = if (yes > 0) "passed" else "failed"
-                            row.put("streaming_checks", streams).put("streaming_verdict", streamVerdict)
-                                .put("streaming_gate", JSONObject().put("required_yes", 1).put("passed_count", yes).put("status", streamVerdict))
                             if (appPassed.size != 5) row.put("failure_stage", "application_checks")
-                            else if (streamVerdict != "passed") row.put("failure_stage", "streaming_checks")
                             else {
                                 stage = "download"
                                 stageStart = System.nanoTime()
@@ -151,7 +127,7 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
                                 val category = if (speed >= 500000) "high" else if (speed >= 200000) "normal" else "rejected"
                                 row.put("downloaded_bytes", bytes).put("expected_download_bytes", 5242880)
                                     .put("elapsed_seconds", seconds).put("download_speed_bps", speed)
-                                    .put("speed_category", category).put("status", if (category == "rejected") "failed" else "passed")
+                                    .put("speed_category", category).put("status", if (category == "rejected") "failed" else "pending_streaming")
                                 if (category == "rejected") row.put("failure_stage", "download_threshold")
                             }
                         } catch (e: Exception) {
@@ -168,6 +144,62 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
                 })
             }
             futures.forEach { it.get() }
+            process?.destroy()
+            if (process?.isAlive == true) process?.destroyForcibly()
+            process = null
+            val basePassed = synchronized(results) { results.filter { it.optString("status") == "pending_streaming" } }
+            val streamNames = basePassed.map { it.optString("name") }
+            if (streamNames.isNotEmpty()) {
+                onProgress("基础测速完成，开始独立流媒体阶段：0/" + streamNames.size)
+                val streamWorkers = minOf(24, maxOf(1, workers), streamNames.size)
+                val streamApiPort = ServerSocket(0).use { it.localPort }
+                val streamBasePort = reservePorts(streamWorkers, streamApiPort)
+                val streamSecret = UUID.randomUUID().toString().replace("-", "")
+                val streamConfig = File(dir, "probe-$task-stream.yaml")
+                val streamLog = File(dir, "probe-$task-stream.log")
+                streamConfig.writeText(makeConfig(String(candidateBytes, Charsets.UTF_8), streamNames, streamWorkers, streamApiPort, streamBasePort, streamSecret))
+                val streamPool = Executors.newFixedThreadPool(streamWorkers)
+                val streamProgress = java.util.concurrent.atomic.AtomicInteger(0)
+                try {
+                    process = ProcessBuilder("/system/bin/linker64", core.executable.absolutePath, "-d", dir.absolutePath, "-f", streamConfig.absolutePath)
+                        .directory(dir).redirectErrorStream(true).redirectOutput(streamLog).start()
+                    val streamApi = "http://127.0.0.1:$streamApiPort"
+                    waitApi(streamApi, streamSecret, process!!)
+                    val streamJobs = streamNames.mapIndexed { index, name ->
+                        streamPool.submit(Callable {
+                            val worker = index % streamWorkers
+                            val proxy = Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", streamBasePort + worker))
+                            select(streamApi, streamSecret, "PHONE-%02d".format(worker), name)
+                            val targets = linkedMapOf(
+                                "netflix" to "https://www.netflix.com/title/80018499",
+                                "youtube_premium" to "https://www.youtube.com/premium",
+                                "disney_plus" to "https://www.disneyplus.com/",
+                                "bilibili" to "https://api.bilibili.com/x/web-interface/nav",
+                                "spotify" to "https://open.spotify.com/",
+                                "tiktok" to "https://www.tiktok.com/"
+                            )
+                            val streams = JSONObject()
+                            targets.forEach { (key, url) -> streams.put(key, checkStreaming(key, url, proxy)) }
+                            val yes = targets.keys.count { streams.optJSONObject(it)?.optString("status") == "yes" }
+                            synchronized(results) {
+                                val row = results.first { it.optString("name") == name }
+                                row.put("streaming_checks", streams).put("streaming_verdict", if (yes > 0) "passed" else "failed")
+                                    .put("streaming_gate", JSONObject().put("required_yes", 1).put("passed_count", yes).put("status", if (yes > 0) "passed" else "failed"))
+                                    .put("status", if (yes > 0) "passed" else "failed")
+                                if (yes == 0) row.put("failure_stage", "streaming_checks") else row.remove("failure_stage")
+                            }
+                            onProgress("流媒体进度：" + streamProgress.incrementAndGet() + "/" + streamNames.size + "，当前节点：" + name)
+                        })
+                    }
+                    streamJobs.forEach { it.get() }
+                } finally {
+                    streamPool.shutdownNow()
+                    process?.destroy()
+                    if (process?.isAlive == true) process?.destroyForcibly()
+                    process = null
+                    streamConfig.delete()
+                }
+            } else onProgress("基础测速没有通过节点，跳过流媒体阶段")
             val ordered = synchronized(results) { results.sortedBy { names.indexOf(it.optString("name")) } }
             val high = ordered.count { it.optString("status") == "passed" && it.optString("speed_category") == "high" }
             val normal = ordered.count { it.optString("status") == "passed" && it.optString("speed_category") == "normal" }
