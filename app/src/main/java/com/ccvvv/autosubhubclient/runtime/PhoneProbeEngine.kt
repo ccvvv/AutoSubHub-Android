@@ -177,7 +177,7 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
     }
 
     private fun makeConfig(candidate: String, names: List<String>, workers: Int, apiPort: Int, base: Int, secret: String): String {
-        val refs = names.joinToString(", ") { JSONObject.quote(it) }
+        val refs = names.joinToString(", ") { yamlSingleQuoted(it) }
         val groups = (0 until workers).joinToString("\n") { i ->
             "  - name: PHONE-%02d\n    type: select\n    proxies: [%s]".format(i, refs)
         }
@@ -186,6 +186,12 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
         }
         return candidate.trimEnd() + "\n" + "allow-lan: false\nmode: rule\nlog-level: error\nipv6: false\n" +
             "external-controller: 127.0.0.1:$apiPort\nsecret: \"$secret\"\nproxy-groups:\n$groups\nlisteners:\n$listeners\nrules:\n  - MATCH,DIRECT\n"
+    }
+
+    /** YAML single-quoted scalars do not interpret backslashes as escape sequences. */
+    private fun yamlSingleQuoted(value: String): String {
+        require(value.none { it.code < 0x20 || it.code == 0x7f }) { "节点名称包含 YAML 不允许的控制字符" }
+        return "'" + value.replace("'", "''") + "'"
     }
 
     private fun waitApi(api: String, secret: String, process: Process) {
