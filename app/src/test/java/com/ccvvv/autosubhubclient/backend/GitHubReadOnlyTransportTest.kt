@@ -33,7 +33,7 @@ class GitHubReadOnlyTransportTest {
                             assertEquals("application/vnd.github+json", accept)
                             "{}".toByteArray()
                         }
-                        url.contains("/commits?") -> {
+                        url.contains("per_page=1") -> {
                             assertEquals("application/vnd.github+json", accept)
                             """[{"sha":"$commit"}]""".toByteArray()
                         }
