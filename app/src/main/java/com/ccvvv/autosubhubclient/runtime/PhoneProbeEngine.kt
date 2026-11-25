@@ -61,13 +61,13 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
             check(validationProcess.waitFor(45, TimeUnit.SECONDS)) { "Mihomo 配置校验超时" }
             val validationOutput = validateLog.readText()
             if (validationProcess.exitValue() != 0) {
-                val lineNumber = Regex("""yaml: line (\\d+):""").find(validationOutput)
+                val lineNumber = Regex("""yaml: line (\d+):""").find(validationOutput)
                     ?.groupValues?.getOrNull(1)?.toIntOrNull()
                 val configLines = config.readLines()
                 val context = if (lineNumber != null && lineNumber in 1..configLines.size) {
                     val from = maxOf(1, lineNumber - 3)
                     val to = minOf(configLines.size, lineNumber + 3)
-                    (from..to).joinToString("\\n") { n ->
+                    (from..to).joinToString("\n") { n ->
                         val marker = if (n == lineNumber) ">>" else "  "
                         val value = configLines[n - 1]
                         "$marker %d: %s".format(n, value.take(240))
@@ -77,7 +77,7 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
                     configLines[lineNumber - 1].take(240).map { "U+%04X".format(it.code) }.joinToString(" ")
                 } else ""
                 throw IllegalStateException(
-                    "Mihomo 配置校验失败：$validationOutput\\n配置行上下文：\\n$context\\n目标行字符编码：$codepoints"
+                    "Mihomo 配置校验失败：$validationOutput\n配置行上下文：\n$context\n目标行字符编码：$codepoints"
                 )
             }
             process = ProcessBuilder("/system/bin/linker64", binary.absolutePath, "-d", dir.absolutePath, "-f", config.absolutePath)
