@@ -25,6 +25,9 @@ android {
         jniLibs {
             useLegacyPackaging = true
         }
+        resources {
+            excludes += "OSGI-INF/l10n/plugin.properties"
+        }
     }
 
     buildTypes {
