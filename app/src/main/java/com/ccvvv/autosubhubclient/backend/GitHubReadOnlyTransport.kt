@@ -75,7 +75,7 @@ class GitHubReadOnlyTransport(
         val manifest = JSONObject(manifestText)
         // Android's lightweight local-test JSONObject may not expose opt(key) reliably;
         // read this required scalar directly from the validated JSON text.
-        val schemaToken = Regex("""\"schema_version\"\\s*:\\s*(\"[^\"]*\"|[-+]?[0-9]+(?:\\.[0-9]+)?)""")
+        val schemaToken = Regex("""\"schema_version\"\s*:\s*(\"[^\"]*\"|[-+]?[0-9]+(?:\.[0-9]+)?)""")
             .find(manifestText)?.groupValues?.getOrNull(1)
         val schemaVersion = schemaToken?.trim('"')?.toBigDecimalOrNull()
             ?.let { runCatching { it.intValueExact() }.getOrNull() }
