@@ -52,7 +52,7 @@ class GitHubReadOnlyTransport(
         // JSON implementations that may return null for a nested JSONObject value.
         val candidateCommit = branch.optJSONObject("commit")?.optString("sha", "")
             ?.trim()?.takeIf { it.isNotBlank() }
-            ?: Regex(""""commit"\\s*:\\s*\\{[^}]*"sha"\\s*:\\s*"([a-fA-F0-9]{40})"""")
+            ?: Regex(""""sha"\s*:\s*"([a-fA-F0-9]{40})"""")
                 .find(branchJson)?.groupValues?.getOrNull(1)
                 ?: throw IllegalArgumentException("GitHub branch response is missing commit.sha")
         require(candidateCommit.matches(Regex("(?i)^[a-f0-9]{40}$"))) {
