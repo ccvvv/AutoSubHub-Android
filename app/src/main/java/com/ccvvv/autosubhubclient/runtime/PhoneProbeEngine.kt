@@ -239,13 +239,19 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
         try {
             c.requestMethod = method; c.connectTimeout = 8000; c.readTimeout = 8000
             c.setRequestProperty("Authorization", "Bearer $secret")
+            c.setRequestProperty("Connection", "keep-alive")
             if (body != null) { c.doOutput = true; c.setRequestProperty("Content-Type", "application/json"); c.outputStream.use { it.write(body) } }
             val code = c.responseCode
             val stream = if (code in 200..299) c.inputStream else c.errorStream
+            // Consume the complete small API response so HttpURLConnection can reuse
+            // the loopback connection for the next selector/API request.
             val bytes = stream?.use { bounded(it, 65536) } ?: ByteArray(0)
             check(code in 200..299) { "Mihomo API HTTP $code: " + String(bytes, Charsets.UTF_8).take(300) }
             return bytes
-        } finally { c.disconnect() }
+        } catch (error: Exception) {
+            c.disconnect()
+            throw error
+        }
     }
 
     private fun checkApp(name: String, target: String, proxy: Proxy): JSONObject {
