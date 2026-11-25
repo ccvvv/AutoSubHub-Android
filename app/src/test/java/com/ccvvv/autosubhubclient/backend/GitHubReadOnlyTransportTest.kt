@@ -33,7 +33,7 @@ class GitHubReadOnlyTransportTest {
                             assertEquals("application/vnd.github+json", accept)
                             "{}".toByteArray()
                         }
-                        url.substringBefore("?").endsWith("/commits") -> {
+                        url.contains("/commits?") -> {
                             assertEquals("application/vnd.github+json", accept)
                             """[{"sha":"$commit"}]""".toByteArray()
                         }
@@ -74,8 +74,8 @@ class GitHubReadOnlyTransportTest {
                 config = config,
                 requestOverride = { url, _ ->
                     when {
-                        url.substringBefore("?").endsWith("/branches/published-subscriptions") -> "{}".toByteArray()
-                        url.substringBefore("?").endsWith("/commits") -> """[{"sha":"$commit"}]""".toByteArray()
+                        url.contains("/branches/published-subscriptions") -> "{}".toByteArray()
+                        url.contains("/commits?") -> """[{"sha":"$commit"}]""".toByteArray()
                         url.contains("manifest.json") -> manifest
                         else -> {
                             assertTrue("Unexpected GitHub request URL: $url", url.contains("/contents/"))
