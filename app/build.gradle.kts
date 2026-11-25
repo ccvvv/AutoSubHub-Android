@@ -26,7 +26,8 @@ android {
             useLegacyPackaging = true
         }
         resources {
-            excludes += setOf("OSGI-INF/l10n/plugin.properties", "META-INF/DEPENDENCIES")
+            excludes += setOf("OSGI-INF/l10n/plugin.properties")
+            pickFirsts += setOf("META-INF/DEPENDENCIES")
         }
     }
 
