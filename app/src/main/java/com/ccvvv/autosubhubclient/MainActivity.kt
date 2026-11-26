@@ -14,6 +14,7 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.FrameLayout
 import android.widget.TextView
 import android.widget.Toast
 import android.text.InputType
@@ -42,13 +43,29 @@ class MainActivity : Activity() {
         val padding = (20 * resources.displayMetrics.density).toInt()
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.TOP
-            setPadding(padding, padding, padding, padding)
             setBackgroundColor(Color.rgb(245, 248, 255))
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
+        }
+        fun makePage(): LinearLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.TOP
+            setPadding(padding, padding, padding, padding)
+        }
+        val homePage = makePage()
+        val resultsPage = makePage()
+        val settingsPage = makePage()
+        val aboutPage = makePage()
+        var activePage = "home"
+        val pageHost = FrameLayout(this)
+        fun showPage(name: String) {
+            activePage = name
+            homePage.visibility = if (name == "home") android.view.View.VISIBLE else android.view.View.GONE
+            resultsPage.visibility = if (name == "results") android.view.View.VISIBLE else android.view.View.GONE
+            settingsPage.visibility = if (name == "settings") android.view.View.VISIBLE else android.view.View.GONE
+            aboutPage.visibility = if (name == "about") android.view.View.VISIBLE else android.view.View.GONE
         }
 
         // Bento dashboard: live candidate count is populated only after a verified download.
@@ -138,20 +155,20 @@ class MainActivity : Activity() {
         addMiniStat("本次通过", "—", Color.rgb(18, 166, 116))
         statsRow.addView(sideStats, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         dashboardHeader.addView(statsRow)
-        root.addView(dashboardHeader)
+        homePage.addView(dashboardHeader)
 
         val backendLabel = TextView(this).apply {
             text = "后端仓库地址"
             textSize = 16f
         }
-        root.addView(backendLabel)
+        settingsPage.addView(backendLabel)
 
         val backendInput = EditText(this).apply {
             hint = "https://github.com/owner/repository"
             setSingleLine(true)
             setText(preferences.getString(KEY_BACKEND_URL, "https://github.com/ccvvv/AutoSubHub"))
         }
-        root.addView(backendInput)
+        settingsPage.addView(backendInput)
 
         val backendStatus = TextView(this).apply {
             textSize = 13f
@@ -176,8 +193,8 @@ class MainActivity : Activity() {
                 }
             }
         }
-        root.addView(saveButton)
-        root.addView(backendStatus)
+        settingsPage.addView(saveButton)
+        settingsPage.addView(backendStatus)
         val connectButton = Button(this).apply {
             text = "检查 GitHub 后端连接"
             val button = this
@@ -220,9 +237,9 @@ class MainActivity : Activity() {
                 }
             }
         }
-        root.addView(connectButton)
+        settingsPage.addView(connectButton)
         val downloadQueueButton = Button(this).apply {
-            text = "下载原始待测速订阅"
+            text = "下载最新待测速节点"
             val button = this
             setOnClickListener {
                 val config = try {
@@ -268,16 +285,14 @@ class MainActivity : Activity() {
                 }
             }
         }
-        root.addView(downloadQueueButton)
-        root.removeView(downloadQueueButton)
-        root.addView(downloadQueueButton, 1)
+        homePage.addView(downloadQueueButton)
         stylePrimaryButton(downloadQueueButton)
         val mihomoStatus = TextView(this).apply {
             textSize = 13f
             setPadding(0, padding / 3, 0, padding / 3)
             text = "Mihomo 核心尚未验证"
         }
-        root.addView(mihomoStatus)
+        settingsPage.addView(mihomoStatus)
 
         val mihomoLog = TextView(this).apply {
             textSize = 12f
@@ -294,7 +309,7 @@ class MainActivity : Activity() {
                 (180 * resources.displayMetrics.density).toInt()
             )
         }
-        root.addView(mihomoLogScroll)
+        settingsPage.addView(mihomoLogScroll)
         fun appendMihomoLog(message: String) {
             runOnUiThread {
                 if (!isFinishing && !isDestroyed) {
@@ -306,7 +321,7 @@ class MainActivity : Activity() {
             }
         }
 
-        root.addView(Button(this).apply {
+        settingsPage.addView(Button(this).apply {
             text = "校验候选订阅的 Mihomo 配置"
             setOnClickListener {
                 isEnabled = false
@@ -345,7 +360,7 @@ class MainActivity : Activity() {
             }
         })
 
-        root.addView(Button(this).apply {
+        settingsPage.addView(Button(this).apply {
             text = "复制运行日志"
             setOnClickListener {
                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -384,9 +399,9 @@ class MainActivity : Activity() {
                 }
             }
         }
-        root.addView(mihomoTestButton)
+        settingsPage.addView(mihomoTestButton)
         val mihomoSmokeButton = Button(this).apply {
-            text = "测试核心加载配置并启动/停止"
+            text = "测试核心启动 / 停止"
             setOnClickListener {
                 isEnabled = false
                 mihomoStatus.text = "正在校验最小配置并测试启动…"
@@ -415,18 +430,18 @@ class MainActivity : Activity() {
                 }
             }
         }
-        root.addView(mihomoSmokeButton)
+        settingsPage.addView(mihomoSmokeButton)
         val sshHeading = TextView(this).apply {
             text = "GitHub SSH 部署密钥"
             textSize = 16f
             setPadding(0, padding, 0, padding / 3)
         }
-        root.addView(sshHeading)
+        settingsPage.addView(sshHeading)
         val sshStatus = TextView(this).apply {
             textSize = 13f
             text = "尚未读取密钥。生成后将私钥保存在 App 私有目录，只展示可添加到 GitHub 的公钥。"
         }
-        root.addView(sshStatus)
+        settingsPage.addView(sshStatus)
         val sshPublicKey = TextView(this).apply {
             textSize = 11f
             typeface = Typeface.MONOSPACE
@@ -434,9 +449,9 @@ class MainActivity : Activity() {
             setPadding(padding / 2, padding / 2, padding / 2, padding / 2)
             text = "公钥尚未生成"
         }
-        root.addView(sshPublicKey)
+        settingsPage.addView(sshPublicKey)
         var currentSshPublicKey = ""
-        root.addView(Button(this).apply {
+        settingsPage.addView(Button(this).apply {
             text = "生成 / 读取 SSH 密钥"
             setOnClickListener {
                 isEnabled = false
@@ -463,7 +478,7 @@ class MainActivity : Activity() {
                 }
             }
         })
-        root.addView(Button(this).apply {
+        settingsPage.addView(Button(this).apply {
             text = "复制 SSH 公钥"
             setOnClickListener {
                 if (currentSshPublicKey.isBlank()) {
@@ -475,28 +490,28 @@ class MainActivity : Activity() {
                 }
             }
         })
-        addSection(root, "GitHub 添加位置",
+        addSection(settingsPage, "GitHub 添加位置",
             "打开 ccvvv/AutoSubHub 仓库 → Settings → Deploy keys → Add deploy key。粘贴上面的公钥；如需 App 推送测速回执，必须勾选 Allow write access。不要上传或分享私钥。")
-        addSection(root, "任务状态", "空闲 · 后续接入持久化后台任务")
+        addSection(settingsPage, "任务状态", "空闲 · 后续接入持久化后台任务")
         val concurrencyLabel = TextView(this).apply {
             text = "测速并发（1～300）"
             textSize = 16f
             setPadding(0, padding, 0, padding / 3)
         }
-        root.addView(concurrencyLabel)
+        settingsPage.addView(concurrencyLabel)
         val concurrencyInput = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_NUMBER
             setSingleLine(true)
             hint = "默认 200"
             setText(preferences.getInt(KEY_PROBE_CONCURRENCY, DEFAULT_PROBE_CONCURRENCY).toString())
         }
-        root.addView(concurrencyInput)
+        settingsPage.addView(concurrencyInput)
         val concurrencyStatus = TextView(this).apply {
             textSize = 12f
             text = "当前设置：" + preferences.getInt(KEY_PROBE_CONCURRENCY, DEFAULT_PROBE_CONCURRENCY)
         }
-        root.addView(concurrencyStatus)
-        root.addView(Button(this).apply {
+        settingsPage.addView(concurrencyStatus)
+        settingsPage.addView(Button(this).apply {
             text = "保存并发设置"
             setOnClickListener {
                 val value = concurrencyInput.text.toString().toIntOrNull()
@@ -515,9 +530,9 @@ class MainActivity : Activity() {
             setPadding(0, padding / 2, 0, padding / 3)
             text = "正式测速：尚未开始。将执行五站验证、六项流媒体检测和 5 MiB 下载测速。"
         }
-        root.addView(probeStatus)
+        resultsPage.addView(probeStatus)
         val formalProbeButton = Button(this).apply {
-            text = "开始正式测速（生成本地回执）"
+            text = "开始正式测速并生成回执"
             setOnClickListener {
                 val config = try {
                     BackendConfig(repositoryUrl = backendInput.text.toString().trim()).also { it.validate() }
@@ -564,8 +579,8 @@ class MainActivity : Activity() {
                 }
             }
         }
-        root.addView(formalProbeButton)
-        root.addView(Button(this).apply {
+        resultsPage.addView(formalProbeButton)
+        resultsPage.addView(Button(this).apply {
             text = "查看本地测速回执数量"
             setOnClickListener {
                 val receipts = File(filesDir, "receipts").listFiles()
@@ -574,8 +589,8 @@ class MainActivity : Activity() {
             }
         })
 
-        root.addView(Button(this).apply {
-            text = "上传一份已保存测速回执（SSH）"
+        resultsPage.addView(Button(this).apply {
+            text = "上传已保存的测速回执（SSH）"
             setOnClickListener {
                 val config = try {
                     BackendConfig(repositoryUrl = backendInput.text.toString().trim()).also { it.validate() }
@@ -637,12 +652,12 @@ class MainActivity : Activity() {
             setPadding(0, padding / 2, 0, padding / 3)
             text = buildStorageText(storageSummary)
         }
-        root.addView(TextView(this).apply {
+        settingsPage.addView(TextView(this).apply {
             text = "本地文件管理"
             textSize = 16f
             setPadding(0, padding, 0, 0)
         })
-        root.addView(storageStatus)
+        settingsPage.addView(storageStatus)
 
         val cleanupButton = Button(this).apply {
             text = if (storageSummary.cleanupEligibleCount > 0) {
@@ -672,24 +687,78 @@ class MainActivity : Activity() {
                 }
             }
         }
-        root.addView(cleanupButton)
+        settingsPage.addView(cleanupButton)
 
         val footer = TextView(this).apply {
             text = "安全提示：私钥和访问令牌不会写入仓库。"
             textSize = 12f
             setPadding(0, padding, 0, 0)
         }
-        root.addView(footer)
+        aboutPage.addView(footer)
 
-        val pageScroll = ScrollView(this).apply {
-            isFillViewport = true
-            clipToPadding = false
-            addView(root, ViewGroup.LayoutParams(
+        fun addScrollablePage(page: LinearLayout) {
+            pageHost.addView(ScrollView(this).apply {
+                isFillViewport = true
+                clipToPadding = false
+                visibility = android.view.View.GONE
+                addView(page, ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ))
+            }, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
+                ViewGroup.LayoutParams.MATCH_PARENT
             ))
         }
-        setContentView(pageScroll)
+        addScrollablePage(homePage)
+        addScrollablePage(resultsPage)
+        addScrollablePage(settingsPage)
+        addScrollablePage(aboutPage)
+
+        // Compact home shortcuts; advanced controls remain on the Settings tab.
+        homePage.addView(TextView(this).apply {
+            text = "核心管理"
+            textSize = 17f
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            setTextColor(Color.rgb(27, 53, 94))
+            setPadding(0, padding, 0, padding / 3)
+        })
+        homePage.addView(Button(this).apply {
+            text = "核心管理与诊断设置  ›"
+            setOnClickListener { showPage("settings") }
+        })
+        homePage.addView(TextView(this).apply {
+            text = "GitHub 后端与运行日志"
+            textSize = 14f
+            setTextColor(Color.rgb(85, 104, 137))
+            setPadding(0, padding / 2, 0, 0)
+        })
+
+        val nav = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(padding / 4, padding / 4, padding / 4, padding / 4)
+            background = roundedBackground(Color.WHITE, 22f)
+            elevation = 5f * resources.displayMetrics.density
+        }
+        fun navButton(label: String, page: String) = Button(this).apply {
+            text = label
+            isAllCaps = false
+            textSize = 12f
+            setOnClickListener { showPage(page) }
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        nav.addView(navButton("首页", "home"))
+        nav.addView(navButton("测速结果", "results"))
+        nav.addView(navButton("设置", "settings"))
+        nav.addView(navButton("关于", "about"))
+        root.addView(pageHost, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+        root.addView(nav, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        showPage("home")
+        setContentView(root)
     }
 
     override fun onDestroy() {
