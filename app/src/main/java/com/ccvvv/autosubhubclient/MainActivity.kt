@@ -513,7 +513,7 @@ class MainActivity : Activity() {
                     try {
                         val packageInfo = packageManager.getPackageInfo(packageName, 0)
                         appendMihomoLog(
-                            "UPLOAD_TRACE build=262 versionName=${packageInfo.versionName} " +
+                            "UPLOAD_TRACE build=264 versionName=${packageInfo.versionName} " +
                                 "versionCode=${packageInfo.longVersionCode} package=$packageName " +
                                 "receipt=${receipt.name} uploader=manifest-validation"
                         )
