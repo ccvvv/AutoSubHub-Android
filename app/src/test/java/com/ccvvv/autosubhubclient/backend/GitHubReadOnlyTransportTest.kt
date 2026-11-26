@@ -89,6 +89,76 @@ class GitHubReadOnlyTransportTest {
         }
     }
 
+    @Test
+    fun refreshesCachedCandidatesWhenRemoteBranchHeadChanges() {
+        val workspace = Files.createTempDirectory("candidate-subscription-refresh").toFile()
+        try {
+            val oldCommit = "a".repeat(40)
+            val newCommit = "d".repeat(40)
+            val refreshedYaml = """proxies:
+- name: node-one
+  type: socks5
+  server: 127.0.0.1
+  port: 1080
+- name: node-two
+  type: ss
+  server: 127.0.0.2
+  port: 8388
+- name: node-three
+  type: ss
+  server: 127.0.0.3
+  port: 8389
+""".toByteArray()
+            fun manifestFor(bytes: ByteArray): ByteArray {
+                val hash = sha256(bytes)
+                val nodes = (1..3).joinToString(",") { index ->
+                    """{"node_id":"${index.toString(16).padStart(20, '0')}","name":"node-${listOf("one", "two", "three")[index - 1]}"}"""
+                }
+                return """{"schema_version":1,"candidate_sha256":"$hash","unique_candidates":3,"nodes":[$nodes]}""".toByteArray()
+            }
+
+            var remoteCommit = oldCommit
+            var remoteYaml = YAML
+            var remoteManifest = """{"schema_version":1,"candidate_sha256":"${sha256(YAML)}","unique_candidates":2,"nodes":[{"node_id":"${"b".repeat(20)}","name":"node-one"},{"node_id":"${"c".repeat(20)}","name":"node-two"}]}""".toByteArray()
+            val requests = mutableListOf<String>()
+            val transport = GitHubReadOnlyTransport(
+                config = config,
+                requestOverride = { url, _ ->
+                    requests += url
+                    when {
+                        url.substringBefore("?").endsWith("/branches/published-subscriptions") ->
+                            """{"commit":{"sha":"$remoteCommit"}}""".toByteArray()
+                        url.contains("manifest.json") -> remoteManifest
+                        else -> remoteYaml
+                    }
+                }
+            )
+
+            val initial = transport.fetchCandidateSubscription(workspace)
+            assertEquals(oldCommit, initial.candidateCommit)
+            assertEquals(2, initial.candidateCount)
+            assertEquals(3, requests.size)
+
+            // An unchanged branch head performs only the lightweight branch lookup.
+            val cached = transport.fetchCandidateSubscription(workspace)
+            assertEquals(oldCommit, cached.candidateCommit)
+            assertEquals(2, cached.candidateCount)
+            assertEquals(4, requests.size)
+
+            // A new branch head must bypass the old, otherwise-valid local cache.
+            remoteCommit = newCommit
+            remoteYaml = refreshedYaml
+            remoteManifest = manifestFor(refreshedYaml)
+            val refreshed = transport.fetchCandidateSubscription(workspace)
+            assertEquals(newCommit, refreshed.candidateCommit)
+            assertEquals(3, refreshed.candidateCount)
+            assertTrue(refreshed.candidateFile.readBytes().contentEquals(refreshedYaml))
+            assertEquals(7, requests.size)
+        } finally {
+            workspace.deleteRecursively()
+        }
+    }
+
     companion object {
         private val YAML = """proxies:
 - name: node-one
