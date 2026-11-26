@@ -140,10 +140,12 @@ class GitHubReadOnlyTransport(
         val target = File(workspace, "candidate-$actualHash")
         val candidateFile = File(target, "subscription.yaml")
         val manifestFile = File(target, "manifest.json")
+        val commitFile = File(target, "candidate-commit.txt")
         val existingIsValid = target.isDirectory &&
-            candidateFile.isFile && manifestFile.isFile &&
+            candidateFile.isFile && manifestFile.isFile && commitFile.isFile &&
             sha256(candidateFile.readBytes()) == actualHash &&
-            manifestFile.readBytes().contentEquals(manifestBytes)
+            manifestFile.readBytes().contentEquals(manifestBytes) &&
+            commitFile.readText(Charsets.UTF_8).trim().equals(candidateCommit, ignoreCase = true)
         if (!existingIsValid) {
             if (target.exists()) require(target.deleteRecursively()) {
                 "Cannot replace incomplete local candidate snapshot"
