@@ -1,5 +1,6 @@
 name: Android CI
 
+# Trigger a fresh build for the latest SSH upload diagnostics.
 on:
   push:
     branches: [main]
