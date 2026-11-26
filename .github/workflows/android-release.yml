@@ -30,7 +30,7 @@ jobs:
           TAG_NAME: ${{ inputs.tag_name }}
         run: |
           set -euo pipefail
-          if [[ ! "$TAG_NAME" =~ ^newapp-v[0-9]+\\.[0-9]+\\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]; then
+          if [[ ! "$TAG_NAME" =~ ^newapp-v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]; then
             echo "Invalid tag. Expected newapp-vX.Y.Z, optionally with a suffix."
             exit 1
           fi
@@ -89,12 +89,12 @@ jobs:
           set -euo pipefail
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           test -x "$APKSIGNER"
-          "$APKSIGNER" sign \\
-            --ks "$HOME/.android/debug.keystore" \\
-            --ks-key-alias androiddebugkey \\
-            --ks-pass pass:android \\
-            --key-pass pass:android \\
-            --out app/build/outputs/apk/debug/app-debug-stable.apk \\
+          "$APKSIGNER" sign \
+            --ks "$HOME/.android/debug.keystore" \
+            --ks-key-alias androiddebugkey \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --out app/build/outputs/apk/debug/app-debug-stable.apk \
             app/build/outputs/apk/debug/app-debug.apk
           mv app/build/outputs/apk/debug/app-debug-stable.apk app/build/outputs/apk/debug/app-debug.apk
 
