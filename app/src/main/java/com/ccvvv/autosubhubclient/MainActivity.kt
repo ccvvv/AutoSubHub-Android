@@ -511,6 +511,12 @@ class MainActivity : Activity() {
                 probeStatus.text = "正在通过 SSH 上传回执；不会重新测速…"
                 ioExecutor.execute {
                     try {
+                        val packageInfo = packageManager.getPackageInfo(packageName, 0)
+                        appendMihomoLog(
+                            "UPLOAD_TRACE build=262 versionName=${packageInfo.versionName} " +
+                                "versionCode=${packageInfo.longVersionCode} package=$packageName " +
+                                "receipt=${receipt.name} uploader=manifest-validation"
+                        )
                         val result = SshReceiptUploader(config, filesDir).upload(receipt)
                         val remaining = File(filesDir, "receipts").listFiles()
                             ?.count { it.isDirectory && File(it, "receipt.json").isFile } ?: 0
