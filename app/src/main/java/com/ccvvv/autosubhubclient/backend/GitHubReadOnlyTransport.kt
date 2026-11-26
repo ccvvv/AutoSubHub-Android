@@ -13,6 +13,7 @@ import org.eclipse.jgit.revwalk.RevWalk
 import org.eclipse.jgit.treewalk.TreeWalk
 import org.eclipse.jgit.transport.SshTransport
 import org.eclipse.jgit.transport.sshd.SshdSessionFactoryBuilder
+import org.apache.sshd.common.util.io.PathUtils
 import java.security.MessageDigest
 
 /**
@@ -306,6 +307,9 @@ class GitHubReadOnlyTransport(
             "[ssh.github.com]:443 ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItMjU2AAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg="
         )
         knownHosts.writeText(pins.joinToString("\n", postfix = "\n"), Charsets.US_ASCII)
+        // Android has no conventional Linux user home. Configure Apache SSHD's
+        // process-wide resolver to use this app's private files directory.
+        PathUtils.setUserHomeFolderResolver { privateFilesDir.toPath() }
         val factory = SshdSessionFactoryBuilder()
             .setHomeDirectory(privateFilesDir)
             .setSshDirectory(sshDir)
