@@ -760,6 +760,7 @@ class MainActivity : Activity() {
         nav.addView(navButton("测速结果", "results"))
         nav.addView(navButton("设置", "settings"))
         nav.addView(navButton("关于", "about"))
+        styleButtons(nav)
         root.addView(pageHost, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
         ))
