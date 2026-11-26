@@ -5,8 +5,14 @@ import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
+import java.net.URI
+import java.util.Base64
+import org.eclipse.jgit.api.Git
+import org.eclipse.jgit.lib.Constants
+import org.eclipse.jgit.revwalk.RevWalk
+import org.eclipse.jgit.treewalk.TreeWalk
+import org.eclipse.jgit.transport.SshTransport
+import org.eclipse.jgit.transport.sshd.SshdSessionFactoryBuilder
 import java.security.MessageDigest
 
 /**
@@ -19,7 +25,8 @@ class GitHubReadOnlyTransport(
     private val config: BackendConfig,
     private val connectTimeoutMs: Int = 15_000,
     private val readTimeoutMs: Int = 45_000,
-    private val requestOverride: ((String, String) -> ByteArray)? = null
+    private val requestOverride: ((String, String) -> ByteArray)? = null,
+    private val filesDir: File? = null
 ) {
     init {
         config.validate()
@@ -218,41 +225,129 @@ class GitHubReadOnlyTransport(
         return "https://raw.githubusercontent.com/$owner/$repository/$commit/$encodedPath"
     }
 
+    private data class SshSnapshot(
+        val commit: String,
+        val files: Map<String, ByteArray>
+    )
+
+    @Volatile
+    private var sshSnapshotCache: SshSnapshot? = null
+
+    /**
+     * All production reads use the repository's SSH transport on port 443.
+     * This avoids unauthenticated REST API limits and keeps reads on the same
+     * authenticated path as receipt publication. Tests may inject requestOverride.
+     */
     private fun request(url: String, accept: String): ByteArray {
         requestOverride?.let { return it(url, accept) }
-        var lastError: IOException? = null
-        for (attempt in 0 until REQUEST_ATTEMPTS) {
-            val connection = URL(url).openConnection() as HttpURLConnection
-            try {
-                connection.requestMethod = "GET"
-                connection.connectTimeout = connectTimeoutMs
-                connection.readTimeout = readTimeoutMs
-                connection.instanceFollowRedirects = true
-                connection.setRequestProperty("Accept", accept)
-                connection.setRequestProperty("User-Agent", "AutoSubHub-Android/0.1")
-                connection.setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
-                val status = connection.responseCode
-                val stream = if (status in 200..299) connection.inputStream else connection.errorStream
-                val body = stream?.use { readBounded(it, MAX_RESPONSE_BYTES) } ?: ByteArray(0)
-                if (status !in 200..299) {
-                    val detail = String(body, Charsets.UTF_8).take(500)
-                    val error = IllegalStateException("GitHub read failed (HTTP $status): $detail")
-                    if ((status == 429 || status in 500..599) && attempt + 1 < REQUEST_ATTEMPTS) {
-                        Thread.sleep(RETRY_DELAY_MS * (attempt + 1))
-                        continue
-                    }
-                    throw error
-                }
-                return body
-            } catch (error: IOException) {
-                lastError = error
-                if (attempt + 1 >= REQUEST_ATTEMPTS) throw error
-                Thread.sleep(RETRY_DELAY_MS * (attempt + 1))
-            } finally {
-                connection.disconnect()
+        return readFromSsh(url)
+    }
+
+    private fun readFromSsh(url: String): ByteArray {
+        val snapshot = sshSnapshotCache ?: synchronized(this) {
+            sshSnapshotCache ?: loadSshSnapshot().also { sshSnapshotCache = it }
+        }
+        val uri = URI(url)
+        val path = uri.path.trim('/')
+        val repositoryPath = when {
+            uri.host.equals("api.github.com", true) -> {
+                val marker = "/repos/${config.ownerAndRepository.first}/${config.ownerAndRepository.second}/"
+                require(uri.path.startsWith(marker)) { "Unexpected GitHub API repository URL" }
+                uri.path.removePrefix(marker)
+            }
+            uri.host.equals("raw.githubusercontent.com", true) -> {
+                val segments = path.split('/')
+                require(segments.size >= 4) { "Invalid raw GitHub URL" }
+                require(segments[0] == config.ownerAndRepository.first &&
+                    segments[1] == config.ownerAndRepository.second) { "Raw GitHub URL repository mismatch" }
+                segments.drop(3).joinToString("/")
+            }
+            else -> throw IllegalArgumentException("Unsupported GitHub read host: ${uri.host}")
+        }
+
+        if (uri.host.equals("api.github.com", true)) {
+            if (repositoryPath.startsWith("branches/")) {
+                return """{"commit":{"sha":"${snapshot.commit}"}}""".toByteArray(Charsets.UTF_8)
+            }
+            if (repositoryPath.startsWith("contents/")) {
+                val filePath = repositoryPath.removePrefix("contents/")
+                val bytes = snapshot.files[filePath]
+                    ?: throw IllegalStateException("GitHub read failed (HTTP 404): remote file not found: $filePath")
+                val encoded = Base64.getEncoder().encodeToString(bytes)
+                return """{"content":"$encoded","encoding":"base64","path":"$filePath"}""".toByteArray(Charsets.UTF_8)
+            }
+            if (repositoryPath == "commits") {
+                return """[{"sha":"${snapshot.commit}"}]""".toByteArray(Charsets.UTF_8)
+            }
+            throw IllegalArgumentException("Unsupported GitHub API read path: $repositoryPath")
+        }
+
+        return snapshot.files[repositoryPath]
+            ?: throw IllegalStateException("GitHub read failed (HTTP 404): remote file not found: $repositoryPath")
+    }
+
+    private fun loadSshSnapshot(): SshSnapshot {
+        val privateFilesDir = filesDir
+            ?: throw IllegalStateException("请先在 App 中生成 SSH 密钥，并将公钥添加到 GitHub Deploy keys")
+        val keyInfo = SshDeployKeyManager(privateFilesDir).getOrCreate()
+        val sshDir = File(privateFilesDir, "ssh").apply { check(isDirectory || mkdirs()) }
+        val identity = File(sshDir, "id_rsa")
+        if (!identity.isFile || !identity.readBytes().contentEquals(keyInfo.privateKeyFile.readBytes())) {
+            identity.writeBytes(keyInfo.privateKeyFile.readBytes())
+            identity.setReadable(false, false)
+            identity.setWritable(false, false)
+            check(identity.setReadable(true, true) && identity.setWritable(true, true)) {
+                "无法设置 SSH 私钥权限"
             }
         }
-        throw lastError ?: IOException("GitHub request failed")
+        val knownHosts = File(sshDir, "known_hosts")
+        val pins = listOf(
+            "[ssh.github.com]:443 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl",
+            "[ssh.github.com]:443 ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItMjU2AAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg="
+        )
+        knownHosts.writeText(pins.joinToString("\n", postfix = "\n"), Charsets.US_ASCII)
+        val factory = SshdSessionFactoryBuilder()
+            .setHomeDirectory(privateFilesDir)
+            .setSshDirectory(sshDir)
+            .setPreferredAuthentications("publickey")
+            .build(null)
+        val (owner, repository) = config.ownerAndRepository
+        val remote = "ssh://git@ssh.github.com:443/$owner/$repository.git"
+        val tempRoot = File(privateFilesDir, "read-work").apply { check(isDirectory || mkdirs()) }
+        val work = File(tempRoot, java.util.UUID.randomUUID().toString())
+        var git: Git? = null
+        try {
+            git = Git.cloneRepository().setURI(remote).setDirectory(work)
+                .setBranch(config.dataBranch).setDepth(1)
+                .setTransportConfigCallback { transport ->
+                    if (transport is SshTransport) transport.sshSessionFactory = factory
+                }.call()
+            val repositoryHandle = git.repository
+            val head = repositoryHandle.resolve(Constants.HEAD) ?: error("无法读取 SSH 数据分支 HEAD")
+            val files = linkedMapOf<String, ByteArray>()
+            RevWalk(repositoryHandle).use { walk ->
+                val commit = walk.parseCommit(head)
+                listOf(
+                    "candidate/subscription.yaml",
+                    "candidate/manifest.json",
+                    "receipts/latest.json"
+                ).forEach { filePath ->
+                    val tree = TreeWalk.forPath(repositoryHandle, filePath, commit.tree)
+                    if (tree != null) tree.use { files[filePath] = repositoryHandle.open(tree.getObjectId(0)).bytes }
+                }
+            }
+            return SshSnapshot(head.name, files)
+        } catch (error: Exception) {
+            val detail = error.message ?: error.javaClass.simpleName
+            throw IllegalStateException(
+                "GitHub SSH 443 读取失败。请确认已生成密钥，并将公钥添加到 ccvvv/AutoSubHub 的 Deploy keys；上传回执需勾选写入权限。原因：$detail",
+                error
+            )
+        } finally {
+            git?.close()
+            factory.close()
+            work.deleteRecursively()
+        }
     }
 
     private fun readBounded(input: java.io.InputStream, maxBytes: Int): ByteArray {
