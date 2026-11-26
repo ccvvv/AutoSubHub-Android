@@ -7,9 +7,6 @@ import org.eclipse.jgit.treewalk.TreeWalk
 import org.eclipse.jgit.transport.SshTransport
 import org.eclipse.jgit.transport.sshd.SshdSessionFactory
 import org.eclipse.jgit.transport.sshd.SshdSessionFactoryBuilder
-import org.yaml.snakeyaml.LoaderOptions
-import org.yaml.snakeyaml.Yaml
-import org.yaml.snakeyaml.constructor.SafeConstructor
 import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
@@ -59,21 +56,20 @@ class SshReceiptUploader(
             receipt.optInt("receipt_candidate_count") == nodes.length() &&
             results.length() == nodes.length()) { "回执没有覆盖全部候选节点，拒绝推进队列" }
 
-        val yaml = Yaml(SafeConstructor(LoaderOptions()))
-        val candidate = yaml.load<Any>(String(candidateBytes, Charsets.UTF_8)) as? Map<*, *>
-            ?: error("候选订阅 YAML 结构无效")
-        val proxies = candidate["proxies"] as? List<*> ?: error("候选订阅缺少 proxies")
-        require(proxies.size == nodes.length()) { "候选节点数与 manifest 不一致" }
-        val proxyNames = proxies.map {
-            (it as? Map<*, *>)?.get("name") as? String ?: error("候选节点缺少 name")
-        }
+        // The candidate YAML bytes were SHA-256 checked above and were already
+        // accepted by the bundled Mihomo runtime before the probe started.
+        // Do not parse this large, user-sourced YAML a second time with SnakeYAML:
+        // unusual Unicode scalars in proxy names can trigger reader/scanner failures
+        // even though Mihomo accepts the same file. The manifest is the canonical
+        // node index used by PhoneProbeEngine; validate it against every receipt row.
         val manifestNames = (0 until nodes.length()).map { nodes.getJSONObject(it).getString("name") }
         val nodeIds = (0 until nodes.length()).map { nodes.getJSONObject(it).getString("node_id") }
         val resultIds = (0 until results.length()).map { results.getJSONObject(it).getString("node_id") }
-        require(proxyNames.size == proxyNames.toSet().size && manifestNames.size == manifestNames.toSet().size &&
-            nodeIds.size == nodeIds.toSet().size && proxyNames.toSet() == manifestNames.toSet() &&
+        require(manifestNames.all { it.isNotBlank() } &&
+            manifestNames.size == manifestNames.toSet().size &&
+            nodeIds.size == nodeIds.toSet().size &&
             resultIds.size == resultIds.toSet().size && resultIds.toSet() == nodeIds.toSet()) {
-            "manifest、候选订阅和测速结果节点映射不完整或重复"
+            "manifest 和测速结果节点映射不完整或重复"
         }
 
         val eligible = (0 until results.length()).count { index ->
