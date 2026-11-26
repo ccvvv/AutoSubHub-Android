@@ -47,27 +47,8 @@ class GitHubReadOnlyTransport(
         require(workspace.exists() || workspace.mkdirs()) { "Cannot create candidate workspace" }
         require(workspace.isDirectory) { "Candidate workspace is not a directory" }
 
-        // Reuse only snapshots previously validated and tagged with their source commit.
-        // Older caches lack the commit marker and are refreshed once.
-        workspace.listFiles()?.filter { it.isDirectory && it.name.startsWith("candidate-") }
-            ?.sortedByDescending { it.lastModified() }?.forEach { cached ->
-                val yamlFile = File(cached, "subscription.yaml")
-                val manifestFile = File(cached, "manifest.json")
-                val commitFile = File(cached, "candidate-commit.txt")
-                if (!yamlFile.isFile || !manifestFile.isFile || !commitFile.isFile) return@forEach
-                val commit = commitFile.readText(Charsets.UTF_8).trim()
-                if (!commit.matches(Regex("(?i)^[a-f0-9]{40}$"))) return@forEach
-                val bytes = runCatching { yamlFile.readBytes() }.getOrNull() ?: return@forEach
-                val hash = sha256(bytes)
-                if (cached.name != "candidate-$hash") return@forEach
-                val manifest = runCatching { JSONObject(manifestFile.readText(Charsets.UTF_8)) }.getOrNull() ?: return@forEach
-                if (manifest.optString("candidate_sha256").lowercase() != hash) return@forEach
-                val count = String(bytes, Charsets.UTF_8).lineSequence().count { it.matches(Regex("^-\\s+\\S.*$")) }
-                val nodes = manifest.optJSONArray("nodes") ?: return@forEach
-                if (count <= 0 || count != nodes.length()) return@forEach
-                return CandidateSubscriptionBundle(commit, yamlFile, manifestFile, hash, bytes.size, count)
-            }
-
+        // Always resolve the current data-branch head before considering a local snapshot.
+        // A valid cache from an older commit is stale even when its files still pass SHA checks.
         val branchBytes = request(GitHubBackendEndpoints.branch(config), GITHUB_JSON)
         val branchJson = String(branchBytes, Charsets.UTF_8)
         val branch = JSONObject(branchJson)
@@ -75,12 +56,36 @@ class GitHubReadOnlyTransport(
         // JSON implementations that may return null for a nested JSONObject value.
         val candidateCommit = branch.optJSONObject("commit")?.optString("sha", "")
             ?.trim()?.takeIf { it.isNotBlank() }
-            ?: Regex(""""sha"\s*:\s*"([a-fA-F0-9]{40})"""")
+            ?: Regex("\\\"sha\\\"\\s*:\\s*\\\"([a-fA-F0-9]{40})\\\"")
                 .find(branchJson)?.groupValues?.getOrNull(1)
-                ?: throw IllegalArgumentException("GitHub branch response is missing commit.sha")
+            ?: throw IllegalArgumentException("GitHub branch response is missing commit.sha")
         require(candidateCommit.matches(Regex("(?i)^[a-f0-9]{40}$"))) {
             "GitHub returned an invalid data-branch head commit"
         }
+
+        // Reuse only a fully validated snapshot pinned to this exact remote branch head.
+        // Old caches without a matching commit marker are ignored and refreshed below.
+        workspace.listFiles()?.filter { it.isDirectory && it.name.startsWith("candidate-") }
+            ?.sortedByDescending { it.lastModified() }?.forEach { cached ->
+                val yamlFile = File(cached, "subscription.yaml")
+                val manifestFile = File(cached, "manifest.json")
+                val commitFile = File(cached, "candidate-commit.txt")
+                if (!yamlFile.isFile || !manifestFile.isFile || !commitFile.isFile) return@forEach
+                val cachedCommit = runCatching { commitFile.readText(Charsets.UTF_8).trim() }.getOrNull()
+                    ?: return@forEach
+                if (!cachedCommit.equals(candidateCommit, ignoreCase = true)) return@forEach
+                val bytes = runCatching { yamlFile.readBytes() }.getOrNull() ?: return@forEach
+                val hash = sha256(bytes)
+                if (cached.name != "candidate-$hash") return@forEach
+                val manifest = runCatching { JSONObject(manifestFile.readText(Charsets.UTF_8)) }.getOrNull()
+                    ?: return@forEach
+                if (manifest.optString("candidate_sha256").lowercase() != hash) return@forEach
+                val count = String(bytes, Charsets.UTF_8).lineSequence()
+                    .count { it.matches(Regex("^-\\s+\\S.*$")) }
+                val nodes = manifest.optJSONArray("nodes") ?: return@forEach
+                if (count <= 0 || count != nodes.length()) return@forEach
+                return CandidateSubscriptionBundle(candidateCommit, yamlFile, manifestFile, hash, bytes.size, count)
+            }
 
         fun readSnapshot(path: String): ByteArray = request(
             rawSnapshotUrl(path, candidateCommit),
