@@ -59,7 +59,6 @@ android {
     }
 }
 
-
 tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
     testLogging {
         events("failed")
@@ -70,7 +69,13 @@ tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
 
 dependencies {
     implementation("org.eclipse.jgit:org.eclipse.jgit:7.2.0.202503040940-r")
-    implementation("org.eclipse.jgit:org.eclipse.jgit.ssh.apache:7.2.0.202503040940-r")
+    implementation("org.eclipse.jgit:org.eclipse.jgit.ssh.apache:7.2.0.202503040940-r") {
+        // The OSGi bundle embeds the same SSHD classes as core/common and causes
+        // duplicate classes in Android packaging. Use the modular runtime instead.
+        exclude(group = "org.apache.sshd", module = "sshd-osgi")
+    }
+    implementation("org.apache.sshd:sshd-core:2.15.0")
+    implementation("org.apache.sshd:sshd-sftp:2.15.0")
     implementation("org.yaml:snakeyaml:2.3")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")

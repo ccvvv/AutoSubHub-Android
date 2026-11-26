@@ -49,6 +49,34 @@ jobs:
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
 
+      - name: Verify APK signing continuity against installed baseline build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$APKSIGNER"
+          mkdir -p /tmp/baseline-244 /tmp/baseline-245
+          gh run download 45754712438 --repo "${GITHUB_REPOSITORY}" --name AutoSubHub-Android-NewApp-debug --dir /tmp/baseline-244
+          gh run download 45755400273 --repo "${GITHUB_REPOSITORY}" --name AutoSubHub-Android-NewApp-debug --dir /tmp/baseline-245
+          echo "===== Installed baseline: #244 ====="
+          "$APKSIGNER" verify --print-certs /tmp/baseline-244/AutoSubHub-Android-NewApp-debug.apk
+          echo "===== Previous build: #245 ====="
+          "$APKSIGNER" verify --print-certs /tmp/baseline-245/AutoSubHub-Android-NewApp-debug.apk
+          echo "===== Current build ====="
+          "$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk
+          cert244="$("$APKSIGNER" verify --print-certs /tmp/baseline-244/AutoSubHub-Android-NewApp-debug.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+          cert245="$("$APKSIGNER" verify --print-certs /tmp/baseline-245/AutoSubHub-Android-NewApp-debug.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+          certCurrent="$("$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+          test -n "$cert244" && test -n "$cert245" && test -n "$certCurrent"
+          echo "Certificate #244: $cert244"
+          echo "Certificate #245: $cert245"
+          echo "Certificate current: $certCurrent"
+          if [ "$cert244" != "$cert245" ] || [ "$cert244" != "$certCurrent" ]; then
+            echo "::error::APK signing certificate differs from installed baseline #244; do not install this APK."
+            exit 1
+          fi
+          echo "APK signing certificate matches #244; in-place update is supported."
       - name: Rename debug APK
         run: cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/AutoSubHub-Android-NewApp-debug.apk
 
