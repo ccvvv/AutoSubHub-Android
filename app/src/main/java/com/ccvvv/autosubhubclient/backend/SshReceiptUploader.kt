@@ -56,12 +56,8 @@ class SshReceiptUploader(
             receipt.optInt("receipt_candidate_count") == nodes.length() &&
             results.length() == nodes.length()) { "回执没有覆盖全部候选节点，拒绝推进队列" }
 
-        // The candidate YAML bytes were SHA-256 checked above and were already
-        // accepted by the bundled Mihomo runtime before the probe started.
-        // Do not parse this large, user-sourced YAML a second time with SnakeYAML:
-        // unusual Unicode scalars in proxy names can trigger reader/scanner failures
-        // even though Mihomo accepts the same file. The manifest is the canonical
-        // node index used by PhoneProbeEngine; validate it against every receipt row.
+        // Candidate bytes are SHA-256 checked above and were already accepted by Mihomo.
+        // The manifest is the canonical node index; do not parse the YAML a second time.
         val manifestNames = (0 until nodes.length()).map { nodes.getJSONObject(it).getString("name") }
         val nodeIds = (0 until nodes.length()).map { nodes.getJSONObject(it).getString("node_id") }
         val resultIds = (0 until results.length()).map { results.getJSONObject(it).getString("node_id") }
@@ -102,16 +98,16 @@ class SshReceiptUploader(
             }
         }
         val knownHosts = File(sshDir, "known_hosts")
+        // These are GitHub's published host public keys (ED25519, ECDSA, RSA).
+        // The non-default port must be represented as [host]:port in known_hosts.
         val pins = listOf(
             "[ssh.github.com]:443 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl",
-            "[ssh.github.com]:443 ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItMjU2AAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg="
+            "[ssh.github.com]:443 ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItMjU2AAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=",
+            "[ssh.github.com]:443 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk="
         )
         knownHosts.writeText(pins.joinToString("\n", postfix = "\n"), Charsets.US_ASCII)
 
-        // Android does not expose the traditional JVM user.home property. MINA SSHD
-        // resolves its default identity/config locations during ClientBuilder class
-        // initialization, so configure the app-private home BEFORE creating the factory
-        // (and before any SSHD client classes are initialized).
+        // Android has no conventional JVM user.home; configure MINA before initialization.
         val sshHome = filesDir.toPath()
         System.setProperty("user.home", filesDir.absolutePath)
         System.setProperty("user.dir", filesDir.absolutePath)
@@ -120,6 +116,8 @@ class SshReceiptUploader(
         val factory = SshdSessionFactoryBuilder()
             .setHomeDirectory(filesDir)
             .setSshDirectory(sshDir)
+            // Explicitly bind JGit to the exact app-private known_hosts file written above.
+            .setDefaultKnownHostsFiles { listOf(knownHosts.toPath()) }
             .setPreferredAuthentications("publickey")
             .build(null)
         val remote = "ssh://git@ssh.github.com:443/$owner/$repoName.git"
@@ -174,7 +172,6 @@ class SshReceiptUploader(
             stage = "读取本地上传提交"
             val uploadedCommit = repository.resolve(Constants.HEAD) ?: error("无法读取本地上传提交")
 
-            // Acknowledgement alone is not enough: fetch, prove branch ancestry, and compare exact blobs.
             stage = "推送后重新连接并 fetch 远端分支"
             git.fetch().setRemote("origin")
                 .setTransportConfigCallback { transport ->
@@ -200,14 +197,12 @@ class SshReceiptUploader(
             check(verified) { "远端回执内容核验失败；本地文件已保留" }
             stage = "清理已确认上传成功的本地回执"
             val commitSha = uploadedCommit.name
-            // Delete only after remote commit and all three exact file contents were verified.
             var deleted = 0
             listOf(receiptFile, candidateFile, manifestFile).forEach { if (it.delete()) deleted++ }
             check(deleted == 3) { "远端已核验，但本地文件未能全部删除；请检查本地回执目录" }
             taskDir.delete()
             return UploadResult(commitSha, receiptId, deleted)
         } catch (error: Exception) {
-            // Preserve the original exception as the cause; the caller records its full stack.
             throw IllegalStateException("SSH 上传失败阶段：$stage；原始异常：${error.javaClass.simpleName}: ${error.message ?: "无详细信息"}", error)
         } finally {
             git?.close()
