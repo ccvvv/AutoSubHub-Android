@@ -58,14 +58,12 @@ class MainActivity : Activity() {
         val resultsPage = makePage()
         val settingsPage = makePage()
         val aboutPage = makePage()
-        var activePage = "home"
         val pageHost = FrameLayout(this)
+        val pageScrolls = mutableMapOf<String, ScrollView>()
         fun showPage(name: String) {
-            activePage = name
-            homePage.visibility = if (name == "home") android.view.View.VISIBLE else android.view.View.GONE
-            resultsPage.visibility = if (name == "results") android.view.View.VISIBLE else android.view.View.GONE
-            settingsPage.visibility = if (name == "settings") android.view.View.VISIBLE else android.view.View.GONE
-            aboutPage.visibility = if (name == "about") android.view.View.VISIBLE else android.view.View.GONE
+            pageScrolls.forEach { (key, scroll) ->
+                scroll.visibility = if (key == name) android.view.View.VISIBLE else android.view.View.GONE
+            }
         }
 
         // Bento dashboard: live candidate count is populated only after a verified download.
@@ -696,8 +694,8 @@ class MainActivity : Activity() {
         }
         aboutPage.addView(footer)
 
-        fun addScrollablePage(page: LinearLayout) {
-            pageHost.addView(ScrollView(this).apply {
+        fun addScrollablePage(name: String, page: LinearLayout) {
+            val scroll = ScrollView(this).apply {
                 isFillViewport = true
                 clipToPadding = false
                 visibility = android.view.View.GONE
@@ -705,15 +703,17 @@ class MainActivity : Activity() {
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT
                 ))
-            }, FrameLayout.LayoutParams(
+            }
+            pageScrolls[name] = scroll
+            pageHost.addView(scroll, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             ))
         }
-        addScrollablePage(homePage)
-        addScrollablePage(resultsPage)
-        addScrollablePage(settingsPage)
-        addScrollablePage(aboutPage)
+        addScrollablePage("home", homePage)
+        addScrollablePage("results", resultsPage)
+        addScrollablePage("settings", settingsPage)
+        addScrollablePage("about", aboutPage)
 
         // Compact home shortcuts; advanced controls remain on the Settings tab.
         homePage.addView(TextView(this).apply {
