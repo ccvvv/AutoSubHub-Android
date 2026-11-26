@@ -118,7 +118,7 @@ class MainActivity : Activity() {
                 backendStatus.text = "正在读取 GitHub 回执（后台执行）…"
                 ioExecutor.execute {
                     try {
-                        val latest = GitHubReadOnlyTransport(config).readLatestReceipt()
+                        val latest = GitHubReadOnlyTransport(config, filesDir = filesDir).readLatestReceipt()
                         val message = if (latest.receiptCommit == null) {
                             "仓库连接成功；当前数据分支尚无最新回执"
                         } else {
@@ -161,7 +161,7 @@ class MainActivity : Activity() {
                 backendStatus.text = "正在下载 AutoSubHub 原始候选订阅…"
                 ioExecutor.execute {
                     try {
-                        val candidate = GitHubReadOnlyTransport(config).fetchCandidateSubscription(
+                        val candidate = GitHubReadOnlyTransport(config, filesDir = filesDir).fetchCandidateSubscription(
                             File(filesDir, "candidate-subscriptions")
                         )
                         val message = "原始候选订阅下载并校验成功" +
@@ -448,7 +448,7 @@ class MainActivity : Activity() {
                 appendMihomoLog("开始正式测速：并发 $workers；五站 + 六项流媒体 + 5 MiB 下载")
                 ioExecutor.execute {
                     try {
-                        val transport = GitHubReadOnlyTransport(config)
+                        val transport = GitHubReadOnlyTransport(config, filesDir = filesDir)
                         val candidate = transport.fetchCandidateSubscription(File(filesDir, "candidate-subscriptions"))
                         appendMihomoLog("候选清单已核验：${candidate.candidateCount} 个节点，提交 ${candidate.candidateCommit}")
                         val outcome = PhoneProbeEngine(MihomoCoreManager(applicationContext), filesDir).run(candidate, workers) { progress ->
