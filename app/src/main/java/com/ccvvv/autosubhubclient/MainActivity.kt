@@ -524,7 +524,11 @@ class MainActivity : Activity() {
                             }
                         }
                     } catch (error: Exception) {
-                        val message = "SSH 上传失败，本地回执完整保留：${error.message ?: error.javaClass.simpleName}"
+                        // Keep the concise status visible, but persist the complete stack trace
+                        // so runtime/library IndexOutOfBoundsException failures can be located.
+                        val detail = android.util.Log.getStackTraceString(error)
+                        appendMihomoLog("SSH 上传异常完整堆栈：\\n$detail")
+                        val message = "SSH 上传失败，本地回执完整保留：${error.message ?: error.javaClass.simpleName}\\n详细异常堆栈已写入运行日志。"
                         appendMihomoLog(message)
                         runOnUiThread {
                             if (!isFinishing && !isDestroyed) {
