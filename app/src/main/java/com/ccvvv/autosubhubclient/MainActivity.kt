@@ -155,6 +155,7 @@ class MainActivity : Activity() {
         dashboardHeader.addView(statsRow)
         homePage.addView(dashboardHeader)
 
+        addSection(settingsPage, "后端配置", "设置 AutoSubHub 仓库地址，并检查 GitHub 数据连接。")
         val backendLabel = TextView(this).apply {
             text = "后端仓库地址"
             textSize = 16f
@@ -285,6 +286,7 @@ class MainActivity : Activity() {
         }
         homePage.addView(downloadQueueButton)
         stylePrimaryButton(downloadQueueButton)
+        addSection(settingsPage, "Mihomo 核心管理", "以下操作分别用于候选配置校验、核心版本验证和最小配置启动/停止测试。")
         val mihomoStatus = TextView(this).apply {
             textSize = 13f
             setPadding(0, padding / 3, 0, padding / 3)
@@ -491,6 +493,7 @@ class MainActivity : Activity() {
         addSection(settingsPage, "GitHub 添加位置",
             "打开 ccvvv/AutoSubHub 仓库 → Settings → Deploy keys → Add deploy key。粘贴上面的公钥；如需 App 推送测速回执，必须勾选 Allow write access。不要上传或分享私钥。")
         addSection(settingsPage, "任务状态", "空闲 · 后续接入持久化后台任务")
+        addSection(settingsPage, "测速参数", "调整手机测速并发数量；新启动的测速任务读取保存后的设置。")
         val concurrencyLabel = TextView(this).apply {
             text = "测速并发（1～300）"
             textSize = 16f
@@ -523,6 +526,7 @@ class MainActivity : Activity() {
             }
         })
 
+        addSection(resultsPage, "测速与回执", "正式测速会在本机执行，并先保存回执；上传操作单独进行。")
         val probeStatus = TextView(this).apply {
             textSize = 13f
             setPadding(0, padding / 2, 0, padding / 3)
@@ -694,6 +698,11 @@ class MainActivity : Activity() {
         }
         aboutPage.addView(footer)
 
+        styleButtons(homePage)
+        styleButtons(resultsPage)
+        styleButtons(settingsPage)
+        styleButtons(aboutPage)
+
         fun addScrollablePage(name: String, page: LinearLayout) {
             val scroll = ScrollView(this).apply {
                 isFillViewport = true
@@ -772,7 +781,28 @@ class MainActivity : Activity() {
             cornerRadius = radiusDp * resources.displayMetrics.density
         }
 
+    private fun styleButtons(container: ViewGroup) {
+        for (index in 0 until container.childCount) {
+            val child = container.getChildAt(index)
+            if (child is Button && child.tag != "primary") {
+                child.textSize = 14f
+                child.isAllCaps = false
+                child.setTextColor(Color.rgb(39, 65, 105))
+                child.background = roundedBackground(Color.rgb(235, 243, 255), 16f)
+                child.minHeight = (48 * resources.displayMetrics.density).toInt()
+                child.elevation = 2f * resources.displayMetrics.density
+                val params = child.layoutParams
+                if (params is LinearLayout.LayoutParams) {
+                    params.setMargins(0, 0, 0, (8 * resources.displayMetrics.density).toInt())
+                    child.layoutParams = params
+                }
+            }
+            if (child is ViewGroup) styleButtons(child)
+        }
+    }
+
     private fun stylePrimaryButton(button: Button) {
+        button.tag = "primary"
         button.text = "↓  下载最新待测速节点"
         button.textSize = 17f
         button.setTextColor(Color.WHITE)
