@@ -313,6 +313,10 @@ class GitHubReadOnlyTransport(
         val factory = SshdSessionFactoryBuilder()
             .setHomeDirectory(privateFilesDir)
             .setSshDirectory(sshDir)
+            // Do not rely on SSHD's platform/home-directory discovery on Android.
+            // Pin the exact app-private known_hosts file and identity file explicitly.
+            .setDefaultKnownHostsFiles { listOf(knownHosts.toPath()) }
+            .setDefaultIdentities { listOf(identity.toPath()) }
             .setPreferredAuthentications("publickey")
             .build(null)
         val (owner, repository) = config.ownerAndRepository
