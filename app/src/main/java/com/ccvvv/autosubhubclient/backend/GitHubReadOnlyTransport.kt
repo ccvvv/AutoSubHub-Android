@@ -317,6 +317,20 @@ class GitHubReadOnlyTransport(
         val work = File(tempRoot, java.util.UUID.randomUUID().toString())
         var git: Git? = null
         try {
+            // Probe SSH authentication and repository read access separately before cloning.
+            // If this fails, the error is attributable to SSH transport/authentication,
+            // not candidate parsing or local snapshot handling.
+            val remoteHeads = Git.lsRemoteRepository()
+                .setRemote(remote)
+                .setHeads(true)
+                .setTransportConfigCallback { transport ->
+                    if (transport is SshTransport) transport.sshSessionFactory = factory
+                }
+                .call()
+            check(remoteHeads.any { it.name == "refs/heads/${config.dataBranch}" }) {
+                "SSH 已连接，但远端仓库中不存在数据分支：${config.dataBranch}"
+            }
+
             git = Git.cloneRepository().setURI(remote).setDirectory(work)
                 .setBranch(config.dataBranch).setDepth(1)
                 .setTransportConfigCallback { transport ->
@@ -338,9 +352,29 @@ class GitHubReadOnlyTransport(
             }
             return SshSnapshot(head.name, files)
         } catch (error: Exception) {
-            val detail = error.message ?: error.javaClass.simpleName
+            val causes = generateSequence(error as Throwable?) { it.cause }
+                .take(8)
+                .mapIndexed { index, cause ->
+                    "${index + 1}.${cause.javaClass.simpleName}: ${cause.message ?: "(无详细信息)"}"
+                }
+                .joinToString(" <- ")
+            val detail = when {
+                causes.contains("UnknownHostException", ignoreCase = true) ->
+                    "DNS 解析 ssh.github.com 失败"
+                causes.contains("ConnectException", ignoreCase = true) ||
+                    causes.contains("SocketTimeoutException", ignoreCase = true) ->
+                    "SSH 443 网络连接失败或超时"
+                causes.contains("Host key", ignoreCase = true) ||
+                    causes.contains("known_hosts", ignoreCase = true) ->
+                    "GitHub SSH 主机密钥验证失败"
+                causes.contains("auth", ignoreCase = true) ||
+                    causes.contains("publickey", ignoreCase = true) ||
+                    causes.contains("Permission denied", ignoreCase = true) ->
+                    "SSH 公钥认证失败或 GitHub 未接受当前私钥"
+                else -> causes
+            }
             throw IllegalStateException(
-                "GitHub SSH 443 读取失败。请确认已生成密钥，并将公钥添加到 ccvvv/AutoSubHub 的 Deploy keys；上传回执需勾选写入权限。原因：$detail",
+                "GitHub SSH 443 读取失败（已先执行独立 SSH 远端分支预检）。${detail}",
                 error
             )
         } finally {
