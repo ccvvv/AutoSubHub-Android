@@ -206,8 +206,6 @@ class MainActivity : Activity() {
                         runOnUiThread {
                             if (!isFinishing && !isDestroyed) {
                                 backendStatus.text = message
-                                nodeCountValue.text = candidate.candidateCount.toString()
-                                syncValue.text = "已同步 · " + candidate.candidateCommit.take(8)
                                 button.isEnabled = true
                             }
                         }
@@ -254,6 +252,8 @@ class MainActivity : Activity() {
                         runOnUiThread {
                             if (!isFinishing && !isDestroyed) {
                                 backendStatus.text = message
+                                nodeCountValue.text = candidate.candidateCount.toString()
+                                syncValue.text = "已同步 · " + candidate.candidateCommit.take(8)
                                 button.isEnabled = true
                             }
                         }
