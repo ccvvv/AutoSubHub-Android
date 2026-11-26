@@ -5,6 +5,8 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.Typeface
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.widget.ScrollView
 import android.os.Bundle
 import android.view.Gravity
@@ -41,25 +43,102 @@ class MainActivity : Activity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.TOP
-            setPadding(padding, padding * 2, padding, padding)
+            setPadding(padding, padding, padding, padding)
+            setBackgroundColor(Color.rgb(245, 248, 255))
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
         }
 
-        val title = TextView(this).apply {
-            text = "AutoSubHub Android"
+        // Bento dashboard: live candidate count is populated only after a verified download.
+        val dashboardHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(padding / 2, padding / 2, padding / 2, padding)
+        }
+        val brandRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        brandRow.addView(TextView(this).apply {
+            text = "◈  AutoSubHub"
             textSize = 25f
-        }
-        root.addView(title)
+            setTextColor(Color.rgb(24, 48, 91))
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        brandRow.addView(TextView(this).apply {
+            text = "● 系统状态"
+            textSize = 12f
+            setTextColor(Color.rgb(17, 145, 100))
+            setPadding(padding / 2, padding / 3, padding / 2, padding / 3)
+            background = roundedBackground(Color.rgb(225, 248, 239), 24f)
+        })
+        dashboardHeader.addView(brandRow)
+        dashboardHeader.addView(TextView(this).apply {
+            text = "NewApp · 手机测速探针"
+            textSize = 13f
+            setTextColor(Color.rgb(104, 121, 153))
+            setPadding(0, 0, 0, padding / 2)
+        })
 
-        val subtitle = TextView(this).apply {
-            text = "独立客户端 · 首版工程骨架"
-            textSize = 14f
-            setPadding(0, padding / 3, 0, padding)
+        val statsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
         }
-        root.addView(subtitle)
+        val mainStat = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(padding, padding, padding, padding)
+            background = roundedBackground(Color.WHITE, 24f)
+            elevation = padding / 3f
+        }
+        mainStat.addView(TextView(this).apply {
+            text = "待测速节点"
+            textSize = 14f
+            setTextColor(Color.rgb(49, 78, 125))
+        })
+        val nodeCountValue = TextView(this).apply {
+            text = "—"
+            textSize = 42f
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            setTextColor(Color.rgb(38, 112, 226))
+        }
+        mainStat.addView(nodeCountValue)
+        val syncValue = TextView(this).apply {
+            text = "最后同步：尚未下载"
+            textSize = 10f
+            setTextColor(Color.rgb(125, 139, 165))
+        }
+        mainStat.addView(syncValue)
+        statsRow.addView(mainStat, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2f))
+
+        val sideStats = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        fun addMiniStat(label: String, value: String, tint: Int) {
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(padding / 2, padding / 2, padding / 2, padding / 2)
+                background = roundedBackground(Color.WHITE, 20f)
+                elevation = padding / 5f
+            }
+            card.addView(TextView(this).apply {
+                text = label
+                textSize = 11f
+                setTextColor(Color.rgb(91, 108, 139))
+            })
+            card.addView(TextView(this).apply {
+                text = value
+                textSize = 22f
+                typeface = Typeface.create("sans-serif", Typeface.BOLD)
+                setTextColor(tint)
+            })
+            val params = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            params.setMargins(padding / 3, 0, 0, padding / 3)
+            sideStats.addView(card, params)
+        }
+        addMiniStat("已测速", "—", Color.rgb(43, 112, 221))
+        addMiniStat("本次通过", "—", Color.rgb(18, 166, 116))
+        statsRow.addView(sideStats, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        dashboardHeader.addView(statsRow)
+        root.addView(dashboardHeader)
 
         val backendLabel = TextView(this).apply {
             text = "后端仓库地址"
@@ -127,6 +206,8 @@ class MainActivity : Activity() {
                         runOnUiThread {
                             if (!isFinishing && !isDestroyed) {
                                 backendStatus.text = message
+                                nodeCountValue.text = candidate.candidateCount.toString()
+                                syncValue.text = "已同步 · " + candidate.candidateCommit.take(8)
                                 button.isEnabled = true
                             }
                         }
@@ -188,6 +269,9 @@ class MainActivity : Activity() {
             }
         }
         root.addView(downloadQueueButton)
+        root.removeView(downloadQueueButton)
+        root.addView(downloadQueueButton, 1)
+        stylePrimaryButton(downloadQueueButton)
         val mihomoStatus = TextView(this).apply {
             textSize = 13f
             setPadding(0, padding / 3, 0, padding / 3)
@@ -611,6 +695,25 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         ioExecutor.shutdownNow()
         super.onDestroy()
+    }
+
+    private fun roundedBackground(color: Int, radiusDp: Float): GradientDrawable =
+        GradientDrawable().apply {
+            setColor(color)
+            cornerRadius = radiusDp * resources.displayMetrics.density
+        }
+
+    private fun stylePrimaryButton(button: Button) {
+        button.text = "↓  下载最新待测速节点"
+        button.textSize = 17f
+        button.setTextColor(Color.WHITE)
+        button.isAllCaps = false
+        button.minHeight = (54 * resources.displayMetrics.density).toInt()
+        button.background = GradientDrawable(
+            GradientDrawable.Orientation.LEFT_RIGHT,
+            intArrayOf(Color.rgb(72, 151, 255), Color.rgb(44, 174, 245))
+        ).apply { cornerRadius = 28f * resources.displayMetrics.density }
+        button.elevation = 7f * resources.displayMetrics.density
     }
 
     private fun buildStorageText(summary: com.ccvvv.autosubhubclient.storage.StorageSummary): String =
