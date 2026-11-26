@@ -121,12 +121,15 @@ class SshReceiptUploader(
         val tempRoot = File(filesDir, "upload-work").apply { check(isDirectory || mkdirs()) }
         val work = File(tempRoot, UUID.randomUUID().toString())
         var git: Git? = null
+        var stage = "准备 Git 工作目录"
         try {
+            stage = "SSH 克隆 published-subscriptions 分支"
             git = Git.cloneRepository().setURI(remote).setDirectory(work)
                 .setBranch(FIXED_DATA_BRANCH).setDepth(1)
                 .setTransportConfigCallback { transport ->
                     if (transport is SshTransport) transport.sshSessionFactory = factory
                 }.call()
+            stage = "检查远端是否已有未处理回执"
             val repository = git.repository
             val receiptPath = File(work, "receipts/latest.json")
             val candidatePath = File(work, "receipts/candidate.yaml")
@@ -143,31 +146,39 @@ class SshReceiptUploader(
                 receiptPath.writeBytes(receiptBytes)
                 candidatePath.writeBytes(candidateBytes)
                 manifestPath.writeBytes(manifestBytes)
+                stage = "写入并暂存三份回执文件"
                 git.add().addFilepattern("receipts/latest.json").addFilepattern("receipts/candidate.yaml")
                     .addFilepattern("receipts/manifest.json").call()
+                stage = "创建本地回执提交"
                 git.commit().setMessage("Upload Android phone probe receipt $receiptId")
                     .setAuthor("AutoSubHub Android", "ccvvv@users.noreply.github.com")
                     .setCommitter("AutoSubHub Android", "ccvvv@users.noreply.github.com").call()
+                stage = "SSH 推送 published-subscriptions 分支"
                 val pushResults = git.push().setRemote("origin")
                     .setRefSpecs(org.eclipse.jgit.transport.RefSpec("refs/heads/$FIXED_DATA_BRANCH:refs/heads/$FIXED_DATA_BRANCH"))
                     .setTransportConfigCallback { transport ->
                         if (transport is SshTransport) transport.sshSessionFactory = factory
                     }.call()
+                stage = "解析 GitHub 推送确认结果"
                 val updates = pushResults.flatMap { it.remoteUpdates }
                 require(updates.isNotEmpty() && updates.all {
                     it.status == org.eclipse.jgit.transport.RemoteRefUpdate.Status.OK ||
                         it.status == org.eclipse.jgit.transport.RemoteRefUpdate.Status.UP_TO_DATE
                 }) { "GitHub 未确认 published-subscriptions 分支推送成功" }
             }
+            stage = "读取本地上传提交"
             val uploadedCommit = repository.resolve(Constants.HEAD) ?: error("无法读取本地上传提交")
 
             // Acknowledgement alone is not enough: fetch, prove branch ancestry, and compare exact blobs.
+            stage = "推送后重新连接并 fetch 远端分支"
             git.fetch().setRemote("origin")
                 .setTransportConfigCallback { transport ->
                     if (transport is SshTransport) transport.sshSessionFactory = factory
                 }.call()
+            stage = "读取远端分支 HEAD"
             val remoteHead = repository.resolve("refs/remotes/origin/$FIXED_DATA_BRANCH")
                 ?: error("推送后无法读取远端数据分支")
+            stage = "核验远端提交祖先关系及三份文件内容"
             val verified = RevWalk(repository).use { walk ->
                 val uploaded = walk.parseCommit(uploadedCommit)
                 val remote = walk.parseCommit(remoteHead)
@@ -182,6 +193,7 @@ class SshReceiptUploader(
                     blob("receipts/manifest.json").contentEquals(manifestBytes)
             }
             check(verified) { "远端回执内容核验失败；本地文件已保留" }
+            stage = "清理已确认上传成功的本地回执"
             val commitSha = uploadedCommit.name
             // Delete only after remote commit and all three exact file contents were verified.
             var deleted = 0
@@ -189,6 +201,9 @@ class SshReceiptUploader(
             check(deleted == 3) { "远端已核验，但本地文件未能全部删除；请检查本地回执目录" }
             taskDir.delete()
             return UploadResult(commitSha, receiptId, deleted)
+        } catch (error: Exception) {
+            // Preserve the original exception as the cause; the caller records its full stack.
+            throw IllegalStateException("SSH 上传失败阶段：$stage；原始异常：${error.javaClass.simpleName}: ${error.message ?: "无详细信息"}", error)
         } finally {
             git?.close()
             factory.close()
