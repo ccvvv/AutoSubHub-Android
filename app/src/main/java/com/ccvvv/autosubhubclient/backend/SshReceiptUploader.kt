@@ -108,6 +108,15 @@ class SshReceiptUploader(
         )
         knownHosts.writeText(pins.joinToString("\n", postfix = "\n"), Charsets.US_ASCII)
 
+        // Android does not expose the traditional JVM user.home property. MINA SSHD
+        // resolves its default identity/config locations during ClientBuilder class
+        // initialization, so configure the app-private home BEFORE creating the factory
+        // (and before any SSHD client classes are initialized).
+        val sshHome = filesDir.toPath()
+        System.setProperty("user.home", filesDir.absolutePath)
+        System.setProperty("user.dir", filesDir.absolutePath)
+        org.apache.sshd.common.util.io.PathUtils.setUserHomeFolderResolver { sshHome }
+
         val factory = SshdSessionFactoryBuilder()
             .setHomeDirectory(filesDir)
             .setSshDirectory(sshDir)
