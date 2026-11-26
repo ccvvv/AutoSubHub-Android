@@ -44,11 +44,29 @@ jobs:
           path: ~/.android/debug.keystore
           key: autosubhub-android-debug-signing-v1
 
+      - name: Verify restored signing certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "$HOME/.android/debug.keystore"
+          keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | tee signing-certificate.txt
+          ACTUAL="$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | awk -F': ' '/SHA256:/{print $2; exit}' | tr -d ':')"
+          EXPECTED="7F6042B90FC92184190557CBC66BC6030D3BA3B80BF058B695017AB94D9A7619"
+          echo "Expected certificate SHA-256: $EXPECTED"
+          echo "Actual certificate SHA-256:   $ACTUAL"
+          test "$ACTUAL" = "$EXPECTED"
+
       - name: Run unit tests
         run: gradle --no-daemon testDebugUnitTest
 
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
+
+      - name: Verify APK signing certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          apksigner verify --print-certs app/build/outputs/apk/debug/app-debug.apk
 
       - name: Rename debug APK
         run: cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/AutoSubHub-Android-NewApp-debug.apk
