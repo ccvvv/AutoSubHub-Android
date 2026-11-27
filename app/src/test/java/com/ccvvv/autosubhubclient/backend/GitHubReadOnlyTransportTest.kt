@@ -65,7 +65,7 @@ class GitHubReadOnlyTransportTest {
         val workspace = Files.createTempDirectory("candidate-subscription-empty").toFile()
         try {
             val commit = "e".repeat(40)
-            val emptyYaml = "proxies: []\\n".toByteArray()
+            val emptyYaml = "proxies: []\n".toByteArray()
             val manifest = """{"schema_version":1,"candidate_sha256":"${sha256(emptyYaml)}","nodes":[]}""".toByteArray()
             val transport = GitHubReadOnlyTransport(
                 config = config,
