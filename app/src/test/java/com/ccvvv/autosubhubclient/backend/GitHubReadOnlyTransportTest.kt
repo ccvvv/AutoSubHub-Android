@@ -18,7 +18,7 @@ class GitHubReadOnlyTransportTest {
 
 
     @Test
-    fun downloadsCurrentCandidateAndManifestFromOneBranchHead() {
+    fun downloadsCandidateAndManifestFromTheLatestCandidateFileCommit() {
         val workspace = Files.createTempDirectory("candidate-subscription-test").toFile()
         try {
             val commit = "a".repeat(40)
@@ -29,9 +29,9 @@ class GitHubReadOnlyTransportTest {
                 requestOverride = { url, accept ->
                     requests += url
                     when {
-                        url.substringBefore("?").endsWith("/branches/published-subscriptions") -> {
+                        url.contains("/commits?") -> {
                             assertEquals("application/vnd.github+json", accept)
-                            """{"commit": {"sha": "$commit"}}""".toByteArray()
+                            """[{"sha":"$commit"}]""".toByteArray()
                         }
                         else -> {
                             assertTrue("Unexpected raw snapshot URL: $url", url.startsWith("https://raw.githubusercontent.com/owner/repository/$commit/"))
@@ -69,8 +69,8 @@ class GitHubReadOnlyTransportTest {
                 config = config,
                 requestOverride = { url, _ ->
                     when {
-                        url.contains("/branches/published-subscriptions") ->
-                            """{"commit": {"sha": "$commit"}}""".toByteArray()
+                        url.contains("/commits?") ->
+                            """[{"sha":"$commit"}]""".toByteArray()
                         url.contains("manifest.json") -> manifest
                         else -> {
                             assertTrue("Unexpected raw snapshot URL: $url", url.startsWith("https://raw.githubusercontent.com/owner/repository/$commit/"))
@@ -126,8 +126,8 @@ class GitHubReadOnlyTransportTest {
                 requestOverride = { url, _ ->
                     requests += url
                     when {
-                        url.substringBefore("?").endsWith("/branches/published-subscriptions") ->
-                            """{"commit":{"sha":"$remoteCommit"}}""".toByteArray()
+                        url.contains("/commits?") ->
+                            """[{"sha":"$remoteCommit"}]""".toByteArray()
                         url.contains("manifest.json") -> remoteManifest
                         else -> remoteYaml
                     }
@@ -139,7 +139,7 @@ class GitHubReadOnlyTransportTest {
             assertEquals(2, initial.candidateCount)
             assertEquals(3, requests.size)
 
-            // An unchanged branch head performs only the lightweight branch lookup.
+            // An unchanged candidate-file commit reuses the verified local snapshot.
             val cached = transport.fetchCandidateSubscription(workspace)
             assertEquals(oldCommit, cached.candidateCommit)
             assertEquals(2, cached.candidateCount)
