@@ -68,21 +68,9 @@ class SshReceiptUploader(
             "manifest 和测速结果节点映射不完整或重复"
         }
 
-        val eligible = (0 until results.length()).count { index ->
-            val item = results.getJSONObject(index)
-            val checks = item.optJSONObject("application_checks")
-            val atLeastOneAppPassed = listOf("youtube", "telegram", "google", "chatgpt", "github")
-                .any { checks?.optJSONObject(it)?.optString("status") == "passed" }
-            item.optString("status") == "passed" &&
-                item.optString("streaming_verdict") == "passed" &&
-                atLeastOneAppPassed &&
-                item.optInt("downloaded_bytes") == 5 * 1024 * 1024 &&
-                item.optInt("expected_download_bytes") == 5 * 1024 * 1024 &&
-                item.optLong("download_speed_bps") >= 200_000L
-        }
-        require(eligible > 0) {
-            "没有节点同时通过五站、流媒体和完整下载测速门槛；回执保留本地，不上传空结果"
-        }
+        // Upload every complete receipt, including batches where all nodes failed.
+        // The backend records failures as completed probe results while leaving
+        // final/latest.yaml untouched when no node passes the publication gates.
 
         val receiptId = receipt.optString("task_id").ifBlank { UUID.randomUUID().toString() }
         val (owner, repoName) = config.ownerAndRepository
