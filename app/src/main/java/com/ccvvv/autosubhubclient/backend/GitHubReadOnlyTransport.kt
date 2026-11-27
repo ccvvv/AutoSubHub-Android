@@ -133,7 +133,10 @@ class GitHubReadOnlyTransport(
                 "Candidate manifest contains duplicate node names or IDs"
             }
         }
-        require(candidateCount > 0 && candidateCount == nodeArray.length()) {
+        if (candidateCount == 0 && nodeArray.length() == 0) {
+            throw IllegalStateException("当前没有新增待测速节点")
+        }
+        require(candidateCount == nodeArray.length()) {
             "Candidate YAML proxy count ($candidateCount) does not match manifest node count (${nodeArray.length()})"
         }
 
