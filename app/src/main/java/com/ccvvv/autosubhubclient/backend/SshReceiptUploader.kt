@@ -71,11 +71,11 @@ class SshReceiptUploader(
         val eligible = (0 until results.length()).count { index ->
             val item = results.getJSONObject(index)
             val checks = item.optJSONObject("application_checks")
-            val allAppsPassed = listOf("youtube", "telegram", "google", "chatgpt", "github")
-                .all { checks?.optJSONObject(it)?.optString("status") == "passed" }
+            val atLeastOneAppPassed = listOf("youtube", "telegram", "google", "chatgpt", "github")
+                .any { checks?.optJSONObject(it)?.optString("status") == "passed" }
             item.optString("status") == "passed" &&
                 item.optString("streaming_verdict") == "passed" &&
-                allAppsPassed &&
+                atLeastOneAppPassed &&
                 item.optInt("downloaded_bytes") == 5 * 1024 * 1024 &&
                 item.optInt("expected_download_bytes") == 5 * 1024 * 1024 &&
                 item.optLong("download_speed_bps") >= 200_000L
