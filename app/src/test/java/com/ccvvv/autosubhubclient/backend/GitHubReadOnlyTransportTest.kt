@@ -59,6 +59,35 @@ class GitHubReadOnlyTransportTest {
         }
     }
 
+
+    @Test
+    fun reportsWhenIncrementalQueueIsEmpty() {
+        val workspace = Files.createTempDirectory("candidate-subscription-empty").toFile()
+        try {
+            val commit = "e".repeat(40)
+            val emptyYaml = "proxies: []\\n".toByteArray()
+            val manifest = """{"schema_version":1,"candidate_sha256":"${sha256(emptyYaml)}","nodes":[]}""".toByteArray()
+            val transport = GitHubReadOnlyTransport(
+                config = config,
+                requestOverride = { url, _ ->
+                    when {
+                        url.contains("/commits?") -> """[{"sha":"$commit"}]""".toByteArray()
+                        url.contains("manifest.json") -> manifest
+                        else -> emptyYaml
+                    }
+                }
+            )
+            val error = runCatching {
+                transport.fetchCandidateSubscription(workspace)
+            }.exceptionOrNull()
+            assertTrue(error is IllegalStateException)
+            assertEquals("当前没有新增待测速节点", error?.message)
+            assertTrue(workspace.listFiles().orEmpty().isEmpty())
+        } finally {
+            workspace.deleteRecursively()
+        }
+    }
+
     @Test
     fun rejectsCandidateSubscriptionWhenManifestHashDoesNotMatch() {
         val workspace = Files.createTempDirectory("candidate-subscription-bad-hash").toFile()
