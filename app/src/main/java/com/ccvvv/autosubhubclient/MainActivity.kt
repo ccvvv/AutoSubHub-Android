@@ -165,7 +165,7 @@ class MainActivity : Activity() {
                             File(filesDir, "candidate-subscriptions")
                         )
                         val message = "原始候选订阅下载并校验成功" +
-                            "\n待测节点：${candidate.candidateCount}" +
+                            "\n本次新增可测节点：${candidate.candidateCount}" +
                             "\n文件大小：${candidate.byteCount} 字节" +
                             "\n候选提交：${candidate.candidateCommit}" +
                             "\nSHA256：${candidate.candidateSha256}" +
