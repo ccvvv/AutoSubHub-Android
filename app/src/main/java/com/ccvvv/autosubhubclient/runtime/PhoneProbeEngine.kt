@@ -112,11 +112,11 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
                             stageTimes.put("application_checks_ms", TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - stageStart))
                             val appPassed = appTargets.keys.filter { apps.optJSONObject(it)?.optString("status") == "passed" }
                             row.put("application_checks", apps).put("application_gate",
-                                JSONObject().put("required_passes", 5).put("passed_count", appPassed.size)
+                                JSONObject().put("required_passes", 1).put("passed_count", appPassed.size)
                                     .put("passed_services", JSONArray(appPassed))
-                                    .put("status", if (appPassed.size == 5) "passed" else "failed"))
+                                    .put("status", if (appPassed.isNotEmpty()) "passed" else "failed"))
 
-                            if (appPassed.size != 5) row.put("failure_stage", "application_checks")
+                            if (appPassed.isEmpty()) row.put("failure_stage", "application_checks")
                             else {
                                 stage = "download"
                                 stageStart = System.nanoTime()
