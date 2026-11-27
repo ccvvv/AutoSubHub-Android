@@ -95,7 +95,8 @@ class GitHubReadOnlyTransport(
         val candidateBytes = readSnapshot("candidate/subscription.yaml")
         val manifestBytes = readSnapshot("candidate/manifest.json")
         val yaml = String(candidateBytes, Charsets.UTF_8)
-        require(yaml.lineSequence().any { it.trim() == "proxies:" }) {
+        require(yaml.lineSequence().any { it.trim() == "proxies:" } ||
+            yaml.trim() == "proxies: []") {
             "Candidate subscription is not a valid proxies YAML document"
         }
         val candidateCount = yaml.lineSequence().count { it.matches(Regex("^-\\s+\\S.*$")) }
