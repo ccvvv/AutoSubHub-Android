@@ -49,18 +49,20 @@ class GitHubReadOnlyTransport(
 
         // Always resolve the current data-branch head before considering a local snapshot.
         // A valid cache from an older commit is stale even when its files still pass SHA checks.
-        val branchBytes = request(GitHubBackendEndpoints.branch(config), GITHUB_JSON)
-        val branchJson = String(branchBytes, Charsets.UTF_8)
-        val branch = JSONObject(branchJson)
-        // Prefer structured JSON parsing. The strict fallback handles Android local-test
-        // JSON implementations that may return null for a nested JSONObject value.
-        val candidateCommit = branch.optJSONObject("commit")?.optString("sha", "")
-            ?.trim()?.takeIf { it.isNotBlank() }
-            ?: Regex("\\\"sha\\\"\\s*:\\s*\\\"([a-fA-F0-9]{40})\\\"")
-                .find(branchJson)?.groupValues?.getOrNull(1)
-            ?: throw IllegalArgumentException("GitHub branch response is missing commit.sha")
+        request(GitHubBackendEndpoints.branch(config), GITHUB_JSON)
+        // Pin the phone queue to the commit that last changed this exact file,
+        // not the data-branch HEAD. Source snapshot metadata and receipt commits
+        // may advance the branch without changing the queue; those commits must
+        // not cause the Android app to re-test the same nodes.
+        val (owner, repository) = config.ownerAndRepository
+        val historyUrl = "https://api.github.com/repos/$owner/$repository/commits" +
+            "?sha=${encodeQuery(config.dataBranch)}&path=${encodeQuery("candidate/subscription.yaml")}&per_page=1&page=1"
+        val history = JSONArray(String(request(historyUrl, GITHUB_JSON), Charsets.UTF_8))
+        val candidateCommit = history.optJSONObject(0)?.optString("sha", "")?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: throw IllegalArgumentException("GitHub has no candidate subscription commit")
         require(candidateCommit.matches(Regex("(?i)^[a-f0-9]{40}$"))) {
-            "GitHub returned an invalid data-branch head commit"
+            "GitHub returned an invalid candidate subscription commit"
         }
 
         // Reuse only a fully validated snapshot pinned to this exact remote branch head.
