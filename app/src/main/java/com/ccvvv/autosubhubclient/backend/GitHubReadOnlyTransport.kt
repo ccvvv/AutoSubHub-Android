@@ -39,17 +39,15 @@ class GitHubReadOnlyTransport(
 
 
     /**
-     * Downloads the one current candidate pool and its manifest.
-     * Resolve the data branch head once, then pin both file reads to that same SHA.
-     * No candidate-file history is needed: the pool contains only the current test batch.
+     * Downloads the current incremental phone queue and its manifest.
+     * Resolve the latest commit that changed candidate/subscription.yaml, then pin
+     * both file reads to that SHA so unrelated data-branch commits do not replay tests.
      */
     fun fetchCandidateSubscription(workspace: File): CandidateSubscriptionBundle {
         require(workspace.exists() || workspace.mkdirs()) { "Cannot create candidate workspace" }
         require(workspace.isDirectory) { "Candidate workspace is not a directory" }
 
-        // Always resolve the current data-branch head before considering a local snapshot.
-        // A valid cache from an older commit is stale even when its files still pass SHA checks.
-        request(GitHubBackendEndpoints.branch(config), GITHUB_JSON)
+        // Resolve the latest queue commit before considering a local snapshot.
         // Pin the phone queue to the commit that last changed this exact file,
         // not the data-branch HEAD. Source snapshot metadata and receipt commits
         // may advance the branch without changing the queue; those commits must
@@ -65,7 +63,7 @@ class GitHubReadOnlyTransport(
             "GitHub returned an invalid candidate subscription commit"
         }
 
-        // Reuse only a fully validated snapshot pinned to this exact remote branch head.
+        // Reuse only a fully validated snapshot pinned to this exact candidate-file commit.
         // Old caches without a matching commit marker are ignored and refreshed below.
         workspace.listFiles()?.filter { it.isDirectory && it.name.startsWith("candidate-") }
             ?.sortedByDescending { it.lastModified() }?.forEach { cached ->
