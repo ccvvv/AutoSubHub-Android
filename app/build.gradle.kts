@@ -71,7 +71,6 @@ tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
 dependencies {
     implementation("org.eclipse.jgit:org.eclipse.jgit:7.2.0.202503040940-r")
     implementation("org.eclipse.jgit:org.eclipse.jgit.ssh.apache:7.2.0.202503040940-r")
-    implementation("org.yaml:snakeyaml:2.3")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 }
