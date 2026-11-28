@@ -4,7 +4,6 @@ import org.json.JSONObject
 import org.yaml.snakeyaml.LoaderOptions
 import org.yaml.snakeyaml.Yaml
 import org.yaml.snakeyaml.constructor.SafeConstructor
-import java.io.ByteArrayInputStream
 import java.security.MessageDigest
 
 /**
@@ -16,9 +15,7 @@ object NodeIdentity {
 
     fun validateCandidate(candidateBytes: ByteArray, manifest: JSONObject): Map<String, String> {
         val root = try {
-            ByteArrayInputStream(candidateBytes).use { input ->
-                Yaml(SafeConstructor(LoaderOptions())).load<Any>(input)
-            }
+            Yaml(SafeConstructor(LoaderOptions())).load<Any>(candidateBytes.toString(Charsets.UTF_8))
         } catch (error: Exception) {
             throw IllegalArgumentException(
                 "候选订阅 YAML 解析失败（${candidateBytes.size} bytes，SHA-256=${sha256(candidateBytes)}）",
