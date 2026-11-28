@@ -31,7 +31,7 @@ class PhoneProbeEngine(private val core: MihomoCoreManager, private val filesDir
         val manifest = JSONObject(bundle.manifestFile.readText())
         val nodeArray = manifest.getJSONArray("nodes")
         require(nodeArray.length() == bundle.candidateCount)
-        val ids = NodeIdentity.validateCandidate(candidateBytes, manifest)
+        val ids = NodeIdentity.validateManifest(manifest)
         val names = ArrayList<String>()
         for (i in 0 until nodeArray.length()) names.add(nodeArray.getJSONObject(i).getString("name"))
         require(names.isNotEmpty() && names.toSet().size == names.size)
