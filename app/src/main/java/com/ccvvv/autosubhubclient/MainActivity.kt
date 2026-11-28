@@ -143,6 +143,34 @@ class MainActivity : Activity() {
             }
         }
         root.addView(connectButton)
+        val mihomoLog = TextView(this).apply {
+            textSize = 12f
+            typeface = Typeface.MONOSPACE
+            setTextIsSelectable(true)
+            setPadding(padding / 2, padding / 2, padding / 2, padding / 2)
+            text = "运行日志：等待操作"
+        }
+        val mihomoLogScroll = ScrollView(this).apply {
+            isFillViewport = true
+            addView(mihomoLog)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                (180 * resources.displayMetrics.density).toInt()
+            )
+        }
+        root.addView(mihomoLogScroll)
+        runtimeLogAppender = { message ->
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    val existing = mihomoLog.text.toString()
+                    mihomoLog.text = (if (existing == "运行日志：等待操作") "" else "$existing\n") +
+                        "[${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())}] $message"
+                    mihomoLogScroll.post { mihomoLogScroll.fullScroll(ViewGroup.FOCUS_DOWN) }
+                }
+            }
+        }
+        fun appendMihomoLog(message: String) = runtimeLogAppender?.invoke(message)
+
         val downloadQueueButton = Button(this).apply {
             text = "下载待测池快照"
             val button = this
@@ -198,33 +226,7 @@ class MainActivity : Activity() {
         }
         root.addView(mihomoStatus)
 
-        val mihomoLog = TextView(this).apply {
-            textSize = 12f
-            typeface = Typeface.MONOSPACE
-            setTextIsSelectable(true)
-            setPadding(padding / 2, padding / 2, padding / 2, padding / 2)
-            text = "运行日志：等待操作"
-        }
-        val mihomoLogScroll = ScrollView(this).apply {
-            isFillViewport = true
-            addView(mihomoLog)
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                (180 * resources.displayMetrics.density).toInt()
-            )
-        }
-        root.addView(mihomoLogScroll)
-        runtimeLogAppender = { message ->
-            runOnUiThread {
-                if (!isFinishing && !isDestroyed) {
-                    val existing = mihomoLog.text.toString()
-                    mihomoLog.text = (if (existing == "运行日志：等待操作") "" else "$existing\n") +
-                        "[${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())}] $message"
-                    mihomoLogScroll.post { mihomoLogScroll.fullScroll(ViewGroup.FOCUS_DOWN) }
-                }
-            }
-        }
-        fun appendMihomoLog(message: String) = runtimeLogAppender?.invoke(message)
+
 
         root.addView(Button(this).apply {
             text = "校验候选订阅的 Mihomo 配置"
