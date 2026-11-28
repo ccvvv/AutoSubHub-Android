@@ -1,130 +1,47 @@
 package com.ccvvv.autosubhubclient.backend
 
 import org.json.JSONObject
-import org.yaml.snakeyaml.LoaderOptions
-import org.yaml.snakeyaml.Yaml
-import org.yaml.snakeyaml.constructor.SafeConstructor
-import java.io.Reader
-import java.nio.ByteBuffer
-import java.nio.charset.CodingErrorAction
-import java.security.MessageDigest
 
 /**
- * Enforces the backend's canonical node identity contract:
- * SHA-256(JSON(proxy without name, sorted keys, compact separators, UTF-8)).
+ * Validates the manifest-side node identities without parsing candidate YAML.
+ *
+ * The candidate bytes are pinned by candidate_sha256. Mihomo is the sole YAML
+ * parser for the actual proxy configuration. The backend-generated manifest
+ * supplies the canonical full SHA-256 identity for each node.
  */
 object NodeIdentity {
     private val fullId = Regex("^[a-f0-9]{64}$")
 
-    fun validateCandidate(candidateBytes: ByteArray, manifest: JSONObject): Map<String, String> {
-        val yamlText = try {
-            Charsets.UTF_8.newDecoder()
-                .onMalformedInput(CodingErrorAction.REPORT)
-                .onUnmappableCharacter(CodingErrorAction.REPORT)
-                .decode(ByteBuffer.wrap(candidateBytes))
-                .toString()
-        } catch (error: Exception) {
-            throw IllegalArgumentException(
-                "候选订阅不是合法 UTF-8（${candidateBytes.size} bytes，SHA-256=${sha256(candidateBytes)}）",
-                error
-            )
-        }
-        val root = try {
-            // Avoid Android's StringReader implementation and report exact read ranges.
-            Yaml(SafeConstructor(LoaderOptions())).load<Any>(DiagnosticStringReader(yamlText))
-        } catch (error: Exception) {
-            throw IllegalArgumentException(
-                "候选订阅 YAML 解析失败（${candidateBytes.size} bytes，chars=${yamlText.length}，" +
-                    "SHA-256=${sha256(candidateBytes)}，detail=${error.message}）",
-                error
-            )
-        } as? Map<*, *> ?: error("候选订阅 YAML 根节点无效")
-        val proxies = root["proxies"] as? List<*> ?: error("候选订阅缺少 proxies 列表")
-        val nodes = manifest.optJSONArray("nodes") ?: error("manifest 缺少 nodes 列表")
-        require(proxies.size == nodes.length()) { "候选节点数量与 manifest 不一致" }
-
-        val proxiesByName = LinkedHashMap<String, Map<String, Any?>>()
-        for (entry in proxies) {
-            val proxy = entry as? Map<*, *> ?: error("候选订阅包含无效节点")
-            val name = proxy["name"] as? String ?: error("候选节点缺少名称")
-            require(name.isNotBlank() && !proxiesByName.containsKey(name)) {
-                "候选节点名称为空或重复：$name"
-            }
-            val normalized = LinkedHashMap<String, Any?>()
-            for ((key, value) in proxy) {
-                require(key is String) { "候选节点包含非字符串配置键" }
-                normalized[key] = value
-            }
-            proxiesByName[name] = normalized
-        }
-
+    fun validateManifest(manifest: JSONObject): Map<String, String> {
+        val nodes = manifest.optJSONArray("nodes")
+            ?: error("manifest 缺少 nodes 列表")
         val idsByName = LinkedHashMap<String, String>()
         val usedIds = HashSet<String>()
+
         for (index in 0 until nodes.length()) {
             val node = nodes.getJSONObject(index)
-            val name = node.optString("name", "")
-            val declared = node.optString("node_id", "")
-            require(name.isNotBlank() && fullId.matches(declared)) {
+            val name = node.optString("name", "").trim()
+            val declared = node.optString("node_id", "").trim()
+            require(name.isNotBlank()) { "manifest 节点名称为空" }
+            require(fullId.matches(declared)) {
                 "manifest 节点身份必须是完整 64 位 SHA-256：$name"
             }
-            val proxy = proxiesByName[name] ?: error("manifest 节点不在候选订阅中：$name")
-            val identity = proxy.filterKeys { it != "name" }
-            val actual = sha256(canonicalJson(identity).toByteArray(Charsets.UTF_8))
-            require(declared == actual) { "节点完整 SHA-256 指纹不匹配：$name" }
-            val declaredFingerprint = if (node.has("fingerprint")) {
-                node.optString("fingerprint", "")
-            } else actual
-            require(declaredFingerprint == actual) { "节点 fingerprint 字段不匹配：$name" }
-            require(usedIds.add(actual)) { "候选订阅包含重复 SHA-256 指纹：$name" }
-            idsByName[name] = actual
+            require(!idsByName.containsKey(name)) { "manifest 节点名称重复：$name" }
+            require(usedIds.add(declared)) { "manifest 包含重复 SHA-256 指纹：$name" }
+            if (node.has("fingerprint")) {
+                require(node.optString("fingerprint", "") == declared) {
+                    "manifest fingerprint 与 node_id 不一致：$name"
+                }
+            }
+            idsByName[name] = declared
         }
-        require(idsByName.keys == proxiesByName.keys) { "manifest 与候选订阅节点集合不一致" }
+
+        if (manifest.has("unique_candidates")) {
+            val declaredCount = manifest.optInt("unique_candidates", -1)
+            require(declaredCount == nodes.length()) {
+                "manifest unique_candidates 与 nodes 数量不一致"
+            }
+        }
         return idsByName
     }
-
-
-    private class DiagnosticStringReader(source: String) : Reader() {
-        private val chars = source.toCharArray()
-        private var cursor = 0
-        private var closed = false
-
-        override fun read(target: CharArray, offset: Int, length: Int): Int {
-            if (closed) throw java.io.IOException("Reader is closed")
-            if (offset < 0 || length < 0 || offset > target.size - length) {
-                throw IndexOutOfBoundsException(
-                    "YAML reader range invalid: offset=$offset length=$length " +
-                        "targetSize=${target.size} cursor=$cursor sourceLength=${chars.size}"
-                )
-            }
-            if (length == 0) return 0
-            if (cursor >= chars.size) return -1
-            val count = minOf(length, chars.size - cursor)
-            System.arraycopy(chars, cursor, target, offset, count)
-            cursor += count
-            return count
-        }
-
-        override fun close() {
-            closed = true
-        }
-    }
-
-    private fun canonicalJson(value: Any?): String = when (value) {
-        null -> "null"
-        is String -> JSONObject.quote(value)
-        is Boolean -> if (value) "true" else "false"
-        is Number -> value.toString()
-        is Map<*, *> -> value.entries
-            .sortedBy { it.key as? String ?: error("JSON 对象键必须是字符串") }
-            .joinToString(",", "{", "}") { (key, item) ->
-                JSONObject.quote(key as String) + ":" + canonicalJson(item)
-            }
-        is Iterable<*> -> value.joinToString(",", "[", "]") { canonicalJson(it) }
-        is Array<*> -> value.joinToString(",", "[", "]") { canonicalJson(it) }
-        else -> error("不支持的候选配置值类型：${value.javaClass.name}")
-    }
-
-    private fun sha256(bytes: ByteArray): String =
-        MessageDigest.getInstance("SHA-256").digest(bytes)
-            .joinToString("") { "%02x".format(it) }
 }
