@@ -28,6 +28,7 @@ import com.ccvvv.autosubhubclient.runtime.MihomoCoreManager
 import com.ccvvv.autosubhubclient.runtime.PhoneProbeEngine
 
 class MainActivity : Activity() {
+    private var runtimeLogAppender: ((String) -> Unit)? = null
     private val ioExecutor: ExecutorService = Executors.newFixedThreadPool(2)
     private val taskStore by lazy { TaskStore(applicationContext) }
     private val preferences by lazy {
@@ -180,7 +181,7 @@ class MainActivity : Activity() {
                         runOnUiThread {
                             if (!isFinishing && !isDestroyed) {
                                 val detail = android.util.Log.getStackTraceString(error)
-                        appendMihomoLog("下载待测池快照失败，完整异常堆栈：\n$detail")
+                        runtimeLogAppender?.invoke("下载待测池快照失败，完整异常堆栈：\n$detail")
                         backendStatus.text = "下载待测池快照失败：${error.message ?: error.javaClass.simpleName}\n完整堆栈已写入运行日志。"
                                 button.isEnabled = true
                             }
@@ -213,7 +214,7 @@ class MainActivity : Activity() {
             )
         }
         root.addView(mihomoLogScroll)
-        fun appendMihomoLog(message: String) {
+        runtimeLogAppender = { message ->
             runOnUiThread {
                 if (!isFinishing && !isDestroyed) {
                     val existing = mihomoLog.text.toString()
@@ -223,6 +224,7 @@ class MainActivity : Activity() {
                 }
             }
         }
+        fun appendMihomoLog(message: String) = runtimeLogAppender?.invoke(message)
 
         root.addView(Button(this).apply {
             text = "校验候选订阅的 Mihomo 配置"
