@@ -35,13 +35,6 @@ object NodeIdentity {
             }
             idsByName[name] = declared
         }
-
-        if (manifest.has("unique_candidates")) {
-            val declaredCount = manifest.optInt("unique_candidates", -1)
-            require(declaredCount == nodes.length()) {
-                "manifest unique_candidates 与 nodes 数量不一致"
-            }
-        }
         return idsByName
     }
 }
