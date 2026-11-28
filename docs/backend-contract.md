@@ -15,6 +15,8 @@ The phone consumes the original published candidate snapshot; it does not depend
 - `candidate/subscription.yaml`: candidate proxy list.
 - `candidate/manifest.json`: schema version, exact candidate YAML SHA-256, unique candidate count, and per-node names/IDs.
 
+Each manifest `node_id` is the full 64-character lowercase SHA-256 fingerprint of that proxy's canonical configuration: serialize the proxy object after excluding its mutable `name`, with recursively sorted object keys, compact JSON separators, UTF-8 encoding, then SHA-256. If present, `fingerprint` must equal `node_id`. The Android client recomputes this fingerprint when downloading (including cached snapshots), before probing, and again before receipt upload. Legacy 20-character IDs are rejected; names are display labels only and are never node identity.
+
 The client resolves the latest commit touching `candidate/subscription.yaml` first, then downloads both files by that immutable commit SHA. It verifies the manifest schema, SHA-256, node identity uniqueness, and that YAML proxy-entry count equals the manifest node count. The snapshot is stored as one immutable local generation.
 
 The client does not enumerate historical candidate commits, merge snapshots, or advance the backend candidate cursor. Those responsibilities remain in the existing AutoSubHub/Termux flow until a separately versioned mobile receipt contract is implemented.
