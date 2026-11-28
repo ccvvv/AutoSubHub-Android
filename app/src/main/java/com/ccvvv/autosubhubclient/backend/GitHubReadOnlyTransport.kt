@@ -169,6 +169,55 @@ class GitHubReadOnlyTransport(
         )
     }
 
+    /**
+     * Reconcile a saved local receipt against GitHub's authoritative pending file or
+     * immutable processed/<sha>.json record. Local flags are never treated as proof.
+     */
+    fun inspectLocalReceipt(receiptFile: File): RemoteReceiptStatus {
+        require(receiptFile.isFile) { "本地回执文件不存在" }
+        val localBytes = receiptFile.readBytes()
+        require(localBytes.isNotEmpty()) { "本地回执为空" }
+        val local = JSONObject(String(localBytes, Charsets.UTF_8))
+        val digest = sha256(localBytes)
+        val (owner, repository) = config.ownerAndRepository
+        val root = "https://raw.githubusercontent.com/$owner/$repository/${config.dataBranch}/receipts"
+        val processed = requestOptional("$root/processed/$digest.json", GITHUB_RAW)
+        val pending = requestOptional("$root/latest.json", GITHUB_RAW)
+        val current = ReceiptStatusVerifier.verify(localBytes, pending, processed)
+        if (current.verified) return current
+
+        // Backward compatibility: prove old receipts from the consume commit's parent tree.
+        val historyUrl = "https://api.github.com/repos/$owner/$repository/commits" +
+            "?sha=${encodeQuery(config.dataBranch)}&path=receipts/latest.json&per_page=100&page=1"
+        val history = JSONArray(String(request(historyUrl, GITHUB_JSON), Charsets.UTF_8))
+        for (index in 0 until history.length()) {
+            val item = history.optJSONObject(index) ?: continue
+            if (!item.optJSONObject("commit")?.optString("message", "").orEmpty()
+                    .contains("Consume successfully processed phone receipt")) continue
+            val parents = item.optJSONArray("parents") ?: continue
+            val parent = parents.optJSONObject(0)?.optString("sha").orEmpty()
+            if (!parent.matches(Regex("(?i)^[a-f0-9]{40}$"))) continue
+            val oldUrl = "https://raw.githubusercontent.com/$owner/$repository/$parent/receipts/latest.json"
+            val oldBytes = requestOptional(oldUrl, GITHUB_RAW) ?: continue
+            if (!sha256(oldBytes).equals(digest, true)) continue
+            val oldReceipt = JSONObject(String(oldBytes, Charsets.UTF_8))
+            require(oldReceipt.optString("candidate_commit") == local.optString("candidate_commit")) {
+                "Legacy processed receipt candidate commit mismatch"
+            }
+            return RemoteReceiptStatus(
+                "processed", true, digest, local.optString("candidate_commit"),
+                "Verified from legacy GitHub consume commit history"
+            )
+        }
+        return current
+    }
+
+    private fun requestOptional(url: String, accept: String): ByteArray? = try {
+        request(url, accept)
+    } catch (error: IllegalStateException) {
+        if (error.message?.startsWith("GitHub read failed (HTTP 404)") == true) null else throw error
+    }
+
     /** Reads the current receipt via the Contents API, so slash-containing branch names remain safe. */
     fun readLatestReceipt(): LatestReceipt = try {
         readLatestReceiptRequired()
