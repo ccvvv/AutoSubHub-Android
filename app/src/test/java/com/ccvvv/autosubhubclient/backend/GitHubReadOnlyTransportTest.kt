@@ -141,7 +141,7 @@ class GitHubReadOnlyTransportTest {
             fun manifestFor(bytes: ByteArray): ByteArray {
                 val hash = sha256(bytes)
                 val nodes = (1..3).joinToString(",") { index ->
-                    """{"node_id":"${listOf("1ea8b3d1ce6c1299ccd2d95a4282694ce3e2884ef3d2fc167be362b4ff0c87b1", "fff91314ac74730865b22309da25737bc3d607f5f00174e60b85c8b800846049", "5c6c8d5bfdaff668b83f8b0561443f16a3718dcf59f054ce14f80efd01c627ff")[index - 1]}","name":"node-${listOf("one", "two", "three")[index - 1]}"}"""
+                    """{"node_id":"${listOf("1ea8b3d1ce6c1299ccd2d95a4282694ce3e2884ef3d2fc167be362b4ff0c87b1", "e44e23e534c0606455533e9cd2b1fc602f233eaca347efeac38e116a0a857bf4", "5c6c8d5bfdaff668b83f8b0561443f16a3718dcf59f054ce14f80efd01c627ff")[index - 1]}","name":"node-${listOf("one", "two", "three")[index - 1]}"}"""
                 }
                 return """{"schema_version":1,"candidate_sha256":"$hash","unique_candidates":3,"nodes":[$nodes]}""".toByteArray()
             }
