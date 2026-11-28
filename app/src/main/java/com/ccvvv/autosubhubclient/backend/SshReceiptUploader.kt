@@ -32,6 +32,10 @@ class SshReceiptUploader(
         require(candidateFile.isFile && manifestFile.isFile) { "回执缺少候选订阅或 manifest 快照" }
 
         val receiptBytes = receiptFile.readBytes()
+        val remoteReceiptStatus = GitHubReadOnlyTransport(config).inspectLocalReceipt(receiptFile)
+        require(!(remoteReceiptStatus.status == "processed" && remoteReceiptStatus.verified)) {
+            "GitHub 已确认这份回执处理完成（SHA256=${remoteReceiptStatus.receiptSha256}）；禁止重复上传"
+        }
         val candidateBytes = candidateFile.readBytes()
         val manifestBytes = manifestFile.readBytes()
         require(receiptBytes.isNotEmpty() && candidateBytes.isNotEmpty() && manifestBytes.isNotEmpty())
@@ -184,13 +188,10 @@ class SshReceiptUploader(
                     blob("receipts/manifest.json").contentEquals(manifestBytes)
             }
             check(verified) { "远端回执内容核验失败；本地文件已保留" }
-            stage = "清理已确认上传成功的本地回执"
+            // Upload confirmation is not cloud processing confirmation. Keep all local
+            // receipt bytes until a later refresh verifies the immutable processed record.
             val commitSha = uploadedCommit.name
-            var deleted = 0
-            listOf(receiptFile, candidateFile, manifestFile).forEach { if (it.delete()) deleted++ }
-            check(deleted == 3) { "远端已核验，但本地文件未能全部删除；请检查本地回执目录" }
-            taskDir.delete()
-            return UploadResult(commitSha, receiptId, deleted)
+            return UploadResult(commitSha, receiptId, 0)
         } catch (error: Exception) {
             throw IllegalStateException("SSH 上传失败阶段：$stage；原始异常：${error.javaClass.simpleName}: ${error.message ?: "无详细信息"}", error)
         } finally {
