@@ -1,6 +1,7 @@
 package com.ccvvv.autosubhubclient.backend
 
 import org.json.JSONArray
+import com.ccvvv.autosubhubclient.backend.NodeIdentity
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -120,20 +121,7 @@ class GitHubReadOnlyTransport(
         }
         val nodeArray = manifest.optJSONArray("nodes")
             ?: throw IllegalArgumentException("Candidate manifest is missing nodes")
-        val names = HashSet<String>()
-        val ids = HashSet<String>()
-        for (index in 0 until nodeArray.length()) {
-            val node = nodeArray.optJSONObject(index)
-                ?: throw IllegalArgumentException("Candidate manifest contains an invalid node entry")
-            val name = node.optString("name", "").trim()
-            val id = node.optString("node_id", "").trim()
-            require(name.isNotBlank() && id.matches(Regex("(?i)^[a-f0-9]{20}$"))) {
-                "Candidate manifest contains an invalid node identity"
-            }
-            require(names.add(name) && ids.add(id)) {
-                "Candidate manifest contains duplicate node names or IDs"
-            }
-        }
+        NodeIdentity.validateCandidate(candidateBytes, manifest)
         if (candidateCount == 0 && nodeArray.length() == 0) {
             throw IllegalStateException("当前没有新增待测速节点")
         }
