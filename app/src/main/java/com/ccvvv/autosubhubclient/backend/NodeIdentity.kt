@@ -4,6 +4,7 @@ import org.json.JSONObject
 import org.yaml.snakeyaml.LoaderOptions
 import org.yaml.snakeyaml.Yaml
 import org.yaml.snakeyaml.constructor.SafeConstructor
+import java.io.ByteArrayInputStream
 import java.security.MessageDigest
 
 /**
@@ -14,9 +15,16 @@ object NodeIdentity {
     private val fullId = Regex("^[a-f0-9]{64}$")
 
     fun validateCandidate(candidateBytes: ByteArray, manifest: JSONObject): Map<String, String> {
-        val root = Yaml(SafeConstructor(LoaderOptions())).load<Any>(
-            String(candidateBytes, Charsets.UTF_8)
-        ) as? Map<*, *> ?: error("候选订阅 YAML 根节点无效")
+        val root = try {
+            ByteArrayInputStream(candidateBytes).use { input ->
+                Yaml(SafeConstructor(LoaderOptions())).load<Any>(input)
+            }
+        } catch (error: Exception) {
+            throw IllegalArgumentException(
+                "候选订阅 YAML 解析失败（${candidateBytes.size} bytes，SHA-256=${sha256(candidateBytes)}）",
+                error
+            )
+        } as? Map<*, *> ?: error("候选订阅 YAML 根节点无效")
         val proxies = root["proxies"] as? List<*> ?: error("候选订阅缺少 proxies 列表")
         val nodes = manifest.optJSONArray("nodes") ?: error("manifest 缺少 nodes 列表")
         require(proxies.size == nodes.length()) { "候选节点数量与 manifest 不一致" }
