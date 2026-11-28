@@ -83,7 +83,8 @@ object NodeIdentity {
     }
 
 
-    private class DiagnosticStringReader(private val source: String) : Reader() {
+    private class DiagnosticStringReader(source: String) : Reader() {
+        private val chars = source.toCharArray()
         private var cursor = 0
         private var closed = false
 
@@ -92,13 +93,13 @@ object NodeIdentity {
             if (offset < 0 || length < 0 || offset > target.size - length) {
                 throw IndexOutOfBoundsException(
                     "YAML reader range invalid: offset=$offset length=$length " +
-                        "targetSize=${target.size} cursor=$cursor sourceLength=${source.length}"
+                        "targetSize=${target.size} cursor=$cursor sourceLength=${chars.size}"
                 )
             }
             if (length == 0) return 0
-            if (cursor >= source.length) return -1
-            val count = minOf(length, source.length - cursor)
-            source.getChars(cursor, cursor + count, target, offset)
+            if (cursor >= chars.size) return -1
+            val count = minOf(length, chars.size - cursor)
+            System.arraycopy(chars, cursor, target, offset, count)
             cursor += count
             return count
         }
