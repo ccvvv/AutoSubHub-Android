@@ -41,7 +41,7 @@ object NodeIdentity {
         for (index in 0 until nodes.length()) {
             val node = nodes.getJSONObject(index)
             val name = node.optString("name", "")
-            val declared = node.optString("node_id", "").lowercase()
+            val declared = node.optString("node_id", "")
             require(name.isNotBlank() && fullId.matches(declared)) {
                 "manifest 节点身份必须是完整 64 位 SHA-256：$name"
             }
@@ -49,7 +49,9 @@ object NodeIdentity {
             val identity = proxy.filterKeys { it != "name" }
             val actual = sha256(canonicalJson(identity).toByteArray(Charsets.UTF_8))
             require(declared == actual) { "节点完整 SHA-256 指纹不匹配：$name" }
-            val declaredFingerprint = node.optString("fingerprint", actual).lowercase()
+            val declaredFingerprint = if (node.has("fingerprint")) {
+                node.optString("fingerprint", "")
+            } else actual
             require(declaredFingerprint == actual) { "节点 fingerprint 字段不匹配：$name" }
             require(usedIds.add(actual)) { "候选订阅包含重复 SHA-256 指纹：$name" }
             idsByName[name] = actual
