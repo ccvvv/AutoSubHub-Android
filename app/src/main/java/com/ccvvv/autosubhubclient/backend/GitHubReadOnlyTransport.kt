@@ -81,7 +81,15 @@ class GitHubReadOnlyTransport(
                 val manifest = runCatching { JSONObject(manifestFile.readText(Charsets.UTF_8)) }.getOrNull()
                     ?: return@forEach
                 if (manifest.optString("candidate_sha256").lowercase() != hash) return@forEach
-                NodeIdentity.validateCandidate(bytes, manifest)
+                // A corrupt or incompatible local cache must not block a fresh remote fetch.
+                // Treat validation failures as cache misses and remove only this cache directory.
+                val cacheValid = runCatching {
+                    NodeIdentity.validateCandidate(bytes, manifest)
+                }.isSuccess
+                if (!cacheValid) {
+                    cached.deleteRecursively()
+                    return@forEach
+                }
                 val count = String(bytes, Charsets.UTF_8).lineSequence()
                     .count { it.matches(Regex("^-\\s+\\S.*$")) }
                 val nodes = manifest.optJSONArray("nodes") ?: return@forEach
