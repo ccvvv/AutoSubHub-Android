@@ -52,13 +52,13 @@ class SshReceiptUploader(
             "candidate_commits 与 candidate_commit 不匹配"
         }
         val nodes = manifest.getJSONArray("nodes")
-        NodeIdentity.validateCandidate(candidateBytes, manifest)
+        NodeIdentity.validateManifest(manifest)
         val results = receipt.getJSONArray("results")
         require(receipt.optInt("queue_candidate_count") == nodes.length() &&
             receipt.optInt("receipt_candidate_count") == nodes.length() &&
             results.length() == nodes.length()) { "回执没有覆盖全部候选节点，拒绝推进队列" }
 
-        // Recompute each full SHA-256 from the candidate proxy configuration before upload.
+        // Preserve the backend-generated full SHA-256 IDs and verify complete result coverage.
         val manifestNames = (0 until nodes.length()).map { nodes.getJSONObject(it).getString("name") }
         val nodeIds = (0 until nodes.length()).map { nodes.getJSONObject(it).getString("node_id") }
         val resultIds = (0 until results.length()).map { results.getJSONObject(it).getString("node_id") }
