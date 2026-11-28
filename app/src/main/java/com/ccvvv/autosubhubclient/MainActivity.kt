@@ -499,6 +499,62 @@ class MainActivity : Activity() {
         })
 
         root.addView(Button(this).apply {
+            text = "刷新 GitHub 回执处理状态"
+            setOnClickListener {
+                val config = try {
+                    BackendConfig(repositoryUrl = backendInput.text.toString().trim()).also { it.validate() }
+                } catch (error: Exception) {
+                    probeStatus.text = "后端配置错误：${error.message}"
+                    return@setOnClickListener
+                }
+                val localReceipts = File(filesDir, "receipts").listFiles()
+                    ?.filter { it.isDirectory && File(it, "receipt.json").isFile }
+                    ?.sortedBy { it.lastModified() }.orEmpty()
+                if (localReceipts.isEmpty()) {
+                    probeStatus.text = "没有保留在本机的回执；当前没有可按 SHA 核验的本地回执。"
+                    return@setOnClickListener
+                }
+                isEnabled = false
+                probeStatus.text = "正在逐份核对 GitHub 最新回执和不可变 processed SHA 记录…"
+                ioExecutor.execute {
+                    val lines = mutableListOf<String>()
+                    try {
+                        val transport = GitHubReadOnlyTransport(config)
+                        for (directory in localReceipts) {
+                            val localReceipt = File(directory, "receipt.json")
+                            try {
+                                val status = transport.inspectLocalReceipt(localReceipt)
+                                val label = when {
+                                    status.status == "processed" && status.verified -> "GitHub 已确认处理完成"
+                                    status.status == "uploaded_pending" && status.verified -> "GitHub 已确认上传，等待云端处理"
+                                    else -> "远端状态待验证（不推进本地队列）"
+                                }
+                                lines += "${directory.name}: $label\nSHA256: ${status.receiptSha256}\n${status.detail}"
+                            } catch (error: Exception) {
+                                lines += "${directory.name}: 远端核验失败，保留本地回执\n${error.message ?: error.javaClass.simpleName}"
+                            }
+                        }
+                        val message = lines.joinToString("\n\n")
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed) {
+                                probeStatus.text = message
+                                appendMihomoLog("GitHub 回执状态刷新：\n$message")
+                                isEnabled = true
+                            }
+                        }
+                    } catch (error: Exception) {
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed) {
+                                probeStatus.text = "远端状态刷新失败：${error.message ?: error.javaClass.simpleName}；本地回执未修改。"
+                                isEnabled = true
+                            }
+                        }
+                    }
+                }
+            }
+        })
+
+        root.addView(Button(this).apply {
             text = "上传一份已保存测速回执（SSH）"
             setOnClickListener {
                 val config = try {
@@ -528,8 +584,8 @@ class MainActivity : Activity() {
                         val result = SshReceiptUploader(config, filesDir).upload(receipt)
                         val remaining = File(filesDir, "receipts").listFiles()
                             ?.count { it.isDirectory && File(it, "receipt.json").isFile } ?: 0
-                        val message = "SSH 上传并远端核验成功。\n回执：${result.receiptId}\n远端提交：${result.commit}\n" +
-                            "已删除本地回执及两个快照文件（${result.deletedLocalFiles} 个）。\n剩余待上传回执：$remaining"
+                        val message = "SSH 上传并远端 SHA 核验成功。\n回执：${result.receiptId}\n远端提交：${result.commit}\n" +
+                            "本地回执及两个快照文件均已保留；请刷新 GitHub 状态，确认 processed SHA 后再清理。\n本地回执数：$remaining"
                         appendMihomoLog(message)
                         runOnUiThread {
                             if (!isFinishing && !isDestroyed) {
