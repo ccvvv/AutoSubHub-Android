@@ -143,7 +143,7 @@ class MainActivity : Activity() {
         }
         root.addView(connectButton)
         val downloadQueueButton = Button(this).apply {
-            text = "下载原始待测速订阅"
+            text = "下载待测池快照"
             val button = this
             setOnClickListener {
                 val config = try {
@@ -158,14 +158,14 @@ class MainActivity : Activity() {
                     .putString(KEY_BACKEND_URL, config.repositoryUrl.trimEnd('/'))
                     .apply()
                 button.isEnabled = false
-                backendStatus.text = "正在下载 AutoSubHub 原始候选订阅…"
+                backendStatus.text = "正在下载并校验待测池快照…"
                 ioExecutor.execute {
                     try {
                         val candidate = GitHubReadOnlyTransport(config).fetchCandidateSubscription(
                             File(filesDir, "candidate-subscriptions")
                         )
-                        val message = "原始候选订阅下载并校验成功" +
-                            "\n本次新增可测节点：${candidate.candidateCount}" +
+                        val message = "待测池快照下载并校验成功" +
+                            "\n待测池节点数：${candidate.candidateCount}" +
                             "\n文件大小：${candidate.byteCount} 字节" +
                             "\n候选提交：${candidate.candidateCommit}" +
                             "\nSHA256：${candidate.candidateSha256}" +
@@ -179,7 +179,9 @@ class MainActivity : Activity() {
                     } catch (error: Exception) {
                         runOnUiThread {
                             if (!isFinishing && !isDestroyed) {
-                                backendStatus.text = "下载云端待测速清单失败：${error.message ?: error.javaClass.simpleName}"
+                                val detail = android.util.Log.getStackTraceString(error)
+                        appendMihomoLog("下载待测池快照失败，完整异常堆栈：\n$detail")
+                        backendStatus.text = "下载待测池快照失败：${error.message ?: error.javaClass.simpleName}\n完整堆栈已写入运行日志。"
                                 button.isEnabled = true
                             }
                         }
@@ -226,8 +228,8 @@ class MainActivity : Activity() {
             text = "校验候选订阅的 Mihomo 配置"
             setOnClickListener {
                 isEnabled = false
-                mihomoStatus.text = "正在校验候选订阅配置…"
-                appendMihomoLog("开始候选订阅配置校验")
+                mihomoStatus.text = "正在校验待测池快照配置…"
+                appendMihomoLog("开始待测池快照配置校验")
                 ioExecutor.execute {
                     try {
                         val workspace = File(filesDir, "candidate-subscriptions")
@@ -236,7 +238,7 @@ class MainActivity : Activity() {
                             ?.sortedByDescending { it.lastModified() }
                             ?.firstOrNull()
                             ?.let { File(it, "subscription.yaml") }
-                            ?: throw IllegalStateException("请先点击“下载原始待测速订阅”")
+                            ?: throw IllegalStateException("请先点击“下载待测池快照”")
                         appendMihomoLog("使用本地候选文件：${candidateFile.name}")
                         val result = MihomoCoreManager(applicationContext)
                             .validateCandidateSubscription(candidateFile)
@@ -450,7 +452,7 @@ class MainActivity : Activity() {
                     try {
                         val transport = GitHubReadOnlyTransport(config)
                         val candidate = transport.fetchCandidateSubscription(File(filesDir, "candidate-subscriptions"))
-                        appendMihomoLog("候选清单已核验：${candidate.candidateCount} 个节点，提交 ${candidate.candidateCommit}")
+                        appendMihomoLog("待测池快照已核验：${candidate.candidateCount} 个节点，提交 ${candidate.candidateCommit}")
                         val outcome = PhoneProbeEngine(MihomoCoreManager(applicationContext), filesDir).run(candidate, workers) { progress ->
                             runOnUiThread {
                                 if (!isFinishing && !isDestroyed) probeStatus.text = progress
