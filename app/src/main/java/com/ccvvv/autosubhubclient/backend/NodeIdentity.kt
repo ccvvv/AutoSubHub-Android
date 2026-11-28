@@ -4,6 +4,9 @@ import org.json.JSONObject
 import org.yaml.snakeyaml.LoaderOptions
 import org.yaml.snakeyaml.Yaml
 import org.yaml.snakeyaml.constructor.SafeConstructor
+import java.io.Reader
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
 import java.security.MessageDigest
 
 /**
@@ -14,11 +17,25 @@ object NodeIdentity {
     private val fullId = Regex("^[a-f0-9]{64}$")
 
     fun validateCandidate(candidateBytes: ByteArray, manifest: JSONObject): Map<String, String> {
-        val root = try {
-            Yaml(SafeConstructor(LoaderOptions())).load<Any>(candidateBytes.toString(Charsets.UTF_8))
+        val yamlText = try {
+            Charsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(candidateBytes))
+                .toString()
         } catch (error: Exception) {
             throw IllegalArgumentException(
-                "候选订阅 YAML 解析失败（${candidateBytes.size} bytes，SHA-256=${sha256(candidateBytes)}）",
+                "候选订阅不是合法 UTF-8（${candidateBytes.size} bytes，SHA-256=${sha256(candidateBytes)}）",
+                error
+            )
+        }
+        val root = try {
+            // Avoid Android's StringReader implementation and report exact read ranges.
+            Yaml(SafeConstructor(LoaderOptions())).load<Any>(DiagnosticStringReader(yamlText))
+        } catch (error: Exception) {
+            throw IllegalArgumentException(
+                "候选订阅 YAML 解析失败（${candidateBytes.size} bytes，chars=${yamlText.length}，" +
+                    "SHA-256=${sha256(candidateBytes)}，detail=${error.message}）",
                 error
             )
         } as? Map<*, *> ?: error("候选订阅 YAML 根节点无效")
@@ -63,6 +80,32 @@ object NodeIdentity {
         }
         require(idsByName.keys == proxiesByName.keys) { "manifest 与候选订阅节点集合不一致" }
         return idsByName
+    }
+
+
+    private class DiagnosticStringReader(private val source: String) : Reader() {
+        private var cursor = 0
+        private var closed = false
+
+        override fun read(target: CharArray, offset: Int, length: Int): Int {
+            if (closed) throw java.io.IOException("Reader is closed")
+            if (offset < 0 || length < 0 || offset > target.size - length) {
+                throw IndexOutOfBoundsException(
+                    "YAML reader range invalid: offset=$offset length=$length " +
+                        "targetSize=${target.size} cursor=$cursor sourceLength=${source.length}"
+                )
+            }
+            if (length == 0) return 0
+            if (cursor >= source.length) return -1
+            val count = minOf(length, source.length - cursor)
+            source.getChars(cursor, cursor + count, target, offset)
+            cursor += count
+            return count
+        }
+
+        override fun close() {
+            closed = true
+        }
     }
 
     private fun canonicalJson(value: Any?): String = when (value) {
