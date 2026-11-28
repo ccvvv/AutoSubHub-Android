@@ -84,7 +84,7 @@ class GitHubReadOnlyTransport(
                 // A corrupt or incompatible local cache must not block a fresh remote fetch.
                 // Treat validation failures as cache misses and remove only this cache directory.
                 val cacheValid = runCatching {
-                    NodeIdentity.validateCandidate(bytes, manifest)
+                    NodeIdentity.validateManifest(manifest)
                 }.isSuccess
                 if (!cacheValid) {
                     cached.deleteRecursively()
@@ -104,12 +104,6 @@ class GitHubReadOnlyTransport(
 
         val candidateBytes = readSnapshot("candidate/subscription.yaml")
         val manifestBytes = readSnapshot("candidate/manifest.json")
-        val yaml = String(candidateBytes, Charsets.UTF_8)
-        require(yaml.lineSequence().any { it.trim() == "proxies:" } ||
-            yaml.trim() == "proxies: []") {
-            "Candidate subscription is not a valid proxies YAML document"
-        }
-        val candidateCount = yaml.lineSequence().count { it.matches(Regex("^-\\s+\\S.*$")) }
         val manifestText = String(manifestBytes, Charsets.UTF_8)
         val manifest = JSONObject(manifestText)
         // Android's lightweight local-test JSONObject may not expose opt(key) reliably;
@@ -130,8 +124,9 @@ class GitHubReadOnlyTransport(
         }
         val nodeArray = manifest.optJSONArray("nodes")
             ?: throw IllegalArgumentException("Candidate manifest is missing nodes")
-        NodeIdentity.validateCandidate(candidateBytes, manifest)
-        if (candidateCount == 0 && nodeArray.length() == 0) {
+        NodeIdentity.validateManifest(manifest)
+        val candidateCount = nodeArray.length()
+        if (candidateCount == 0) {
             throw IllegalStateException("当前没有新增待测速节点")
         }
         require(candidateCount == nodeArray.length()) {
