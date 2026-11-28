@@ -209,8 +209,10 @@ class MainActivity : Activity() {
                         runOnUiThread {
                             if (!isFinishing && !isDestroyed) {
                                 val detail = android.util.Log.getStackTraceString(error)
-                        runtimeLogAppender?.invoke("下载待测池快照失败，完整异常堆栈：\n$detail")
-                        backendStatus.text = "下载待测池快照失败：${error.message ?: error.javaClass.simpleName}\n完整堆栈已写入运行日志。"
+                                val packageInfo = packageManager.getPackageInfo(packageName, 0)
+                                val buildMarker = "package=$packageName versionName=${packageInfo.versionName} versionCode=${packageInfo.longVersionCode}"
+                                runtimeLogAppender?.invoke("CANDIDATE_DIAGNOSTIC $buildMarker\n下载待测池快照失败，完整异常堆栈：\n$detail")
+                                backendStatus.text = "下载待测池快照失败：${error.message ?: error.javaClass.simpleName}\n版本：${packageInfo.versionName}（${packageInfo.longVersionCode}）\n完整堆栈已写入运行日志。"
                                 button.isEnabled = true
                             }
                         }
