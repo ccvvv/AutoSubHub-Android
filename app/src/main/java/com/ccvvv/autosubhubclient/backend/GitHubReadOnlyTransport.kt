@@ -90,10 +90,9 @@ class GitHubReadOnlyTransport(
                     cached.deleteRecursively()
                     return@forEach
                 }
-                val count = String(bytes, Charsets.UTF_8).lineSequence()
-                    .count { it.matches(Regex("^-\\s+\\S.*$")) }
                 val nodes = manifest.optJSONArray("nodes") ?: return@forEach
-                if (count <= 0 || count != nodes.length()) return@forEach
+                val count = nodes.length()
+                if (count <= 0) return@forEach
                 return CandidateSubscriptionBundle(candidateCommit, yamlFile, manifestFile, hash, bytes.size, count)
             }
 
@@ -128,9 +127,6 @@ class GitHubReadOnlyTransport(
         val candidateCount = nodeArray.length()
         if (candidateCount == 0) {
             throw IllegalStateException("当前没有新增待测速节点")
-        }
-        require(candidateCount == nodeArray.length()) {
-            "Candidate YAML proxy count ($candidateCount) does not match manifest node count (${nodeArray.length()})"
         }
 
         val target = File(workspace, "candidate-$actualHash")
